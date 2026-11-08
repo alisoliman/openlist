@@ -33,7 +33,8 @@ enum FragmentMarkdown {
             default: lines.append(indent + text)
             }
             if !block.note.isEmpty {
-                lines += block.note.components(separatedBy: .newlines).map { indent + "  > " + InlineMarkdown.escape($0) }
+                // A note is Markdown already, written under its line as it is.
+                lines += block.note.components(separatedBy: .newlines).map { $0.isEmpty ? "" : indent + "  " + $0 }
             }
             for file in block.attachments {
                 lines.append(indent + "  Attachment: " + InlineMarkdown.escape(file.displayName)

@@ -266,7 +266,7 @@ struct NextListScreen: View {
                 .onPreferenceChange(NXDocumentRowsKey.self) { documentRowIDs = $0 }
             // The design's 20s clock, so Completed's done-ago chips move on.
             TimelineView(.periodic(from: .now, by: 20)) { context in
-                NXGroupsStack(groups: groups, options: NXRowOptions(showList: false, listID: list.id, notes: true,
+                NXGroupsStack(groups: groups, options: NXRowOptions(showList: false, listID: list.id,
                                                                     now: context.date))
             }
         }
@@ -709,7 +709,7 @@ private struct NXLabelPage: View {
                            progress: (mine.filter(\.isCompleted).count, mine.count))
             // The design's 20s clock, so Completed's done-ago chips move on.
             TimelineView(.periodic(from: .now, by: 20)) { context in
-                NXGroupsStack(groups: groups, options: NXRowOptions(showList: true, notes: true, now: context.date))
+                NXGroupsStack(groups: groups, options: NXRowOptions(showList: true, now: context.date))
             }
             NXAddRow(text: "Add a task")
         }

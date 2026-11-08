@@ -306,7 +306,7 @@ final class NXInspectorTextView: NSTextView {
         role == .title && isDone ? metrics.doneAttributes : metrics.attributes
     }
 
-    private var placeholder: String { role == .title ? "Task" : "Add notes…" }
+    private var placeholder: String { role == .title ? "Task" : "Add a note…" }
 
     /// Shows `text`, set from outside, keeping the caret where it can.
     func show(_ text: String) {

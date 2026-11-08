@@ -146,7 +146,6 @@ private struct NXDocumentLines: View {
             // inspector stays where it is; a click beside the text, J/K or
             // Return move it.
             workbench.clearSelection()
-            if workbench.editingNoteID != nil { workbench.editingNoteID = nil }
             workbench.focusID = block.isTask ? id : nil
         }
         // The caret leaves; a task stays focused for the keys. A heading or
@@ -169,7 +168,8 @@ private struct NXDocumentLines: View {
             // A new task takes the focus, so the page brings it into view.
             if store.block(id: id)?.isTask == true { workbench.focusID = id }
         }
-        hooks.editNote = { workbench.editNote($0) }
+        // ⇧↩ on a task line writes its note in the details beside the list.
+        hooks.editNote = { workbench.writeNote($0) }
         return hooks
     }
 
@@ -526,16 +526,13 @@ private struct NXDocumentCaret: View {
 // MARK: Tasks
 
 /// A task line: the Next row's chrome, its title the live text, with the
-/// subtask progress chip, the note button and the note in place.
+/// subtask progress chip, and the glyph that says it has a note. The note
+/// itself is read and written in the details, never in the line.
 private struct NXDocumentTask: View {
     @Environment(AppEnvironment.self) private var env
-    @Environment(\.nextStyle) private var style
     let row: BlockRow
     let context: NXLineContext
-    @State private var noteHovering = false
-    /// The pointer is over the line, which brings its note button up.
-    @State private var rowHovering = false
-    /// The title's width, to tell whether a folded note's hint fits after it.
+    /// The title's width, to tell whether the note glyph fits after it.
     @State private var titleWidth: CGFloat = 0
 
     private var task: Block { row.block }
@@ -544,12 +541,12 @@ private struct NXDocumentTask: View {
     var body: some View {
         let id = row.id
         let editing = context.focus.blockID == id
-        let noteEditing = workbench.editingNoteID == id
-        let noteOpen = workbench.openNotes.contains(id)
-        // The design's hint that a folded note is there.
-        let hint = !editing && !noteOpen && !noteEditing && !task.note.isEmpty
-            ? NXNoteHint.placement(after: context.contents.content(of: task, store: env.store), width: titleWidth)
-            : nil
+        // A line being written shows only what's typed, as the design's input does.
+        let glyph = editing ? nil : NXNoteGlyph.kind(of: task)
+        let placement = glyph.map { _ in
+            NXNoteGlyph.placement(after: context.contents.content(of: task, store: env.store), width: titleWidth,
+                                  topInset: NXEditor.lineBoxInset(for: .task))
+        }
         let closing = workbench.closing[id]
         let struck = closing ?? task.isCompleted
         let strikeWidth = struck && !editing ? context.contents.usedWidth(of: task, store: env.store, width: titleWidth) : 0
@@ -559,115 +556,39 @@ private struct NXDocumentTask: View {
             // The line plays its own rowIn, and has no hover of its own.
             NXTaskRowChrome(task: task, options: NXRowOptions(showList: false, listID: context.listID, now: clock.date),
                             indent: CGFloat(row.depth) * 26, leadingChips: progressChip,
-                            editing: editing || noteEditing, entrance: nil, draggable: false,
+                            editing: editing, entrance: nil, draggable: false,
                             hoverFill: false,
                             onClick: {
                                 // Clicking beside the text leaves any line being written, as a click away does.
                                 NXDocumentEditing.end()
                                 workbench.click(id, command: NXModifiers.command, shift: NXModifiers.shift)
                             }) {
-                VStack(alignment: .leading, spacing: 0) {
-                    NXLineText(row: row, context: context, editing: editing)
-                        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { titleWidth = $0 }
-                        .overlay(alignment: .topLeading) {
-                            // A line being written shows only what's typed, as
-                            // the design's input does.
-                            if !editing { NXDocumentStrike(struck: struck, closing: closing != nil, width: strikeWidth) }
-                        }
-                        // A hint with no room after the last line takes the next,
-                        // as the design's inline icon wraps.
-                        .padding(.bottom, hint?.wraps == true ? NXNoteHint.linePitch : 0)
-                        .overlay(alignment: .topLeading) {
-                            if let hint { NXNoteHint(placement: hint) }
-                        }
-                    if noteOpen || noteEditing {
-                        NXDocumentNote(task: task, editing: noteEditing)
-                            .padding(.top, 3)
-                            .padding(.bottom, 4)
-                            // The design's fadeIn, 180ms ease, as it shows. The
-                            // lines below make room at once, and it goes at once.
-                            .transition(.asymmetric(insertion: .opacity.animation(NX.cssEase(180)), removal: .identity))
+                NXLineText(row: row, context: context, editing: editing)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { titleWidth = $0 }
+                    .overlay(alignment: .topLeading) {
+                        if !editing { NXDocumentStrike(struck: struck, closing: closing != nil, width: strikeWidth) }
                     }
-                }
+                    // A glyph with no room after the last line takes the next,
+                    // as the design's inline icon wraps.
+                    .padding(.bottom, placement?.wraps == true ? NXNoteGlyph.linePitch : 0)
+                    .overlay(alignment: .topLeading) {
+                        if let glyph, let placement {
+                            NXNoteGlyph(kind: glyph, placement: placement) {
+                                NXDocumentEditing.end()
+                                workbench.inspect(id)
+                            }
+                        }
+                    }
             } buttons: {
-                Button {
-                    // The note being written is left first, as the design's
-                    // textarea blurs: it's saved, then hidden, or opened again
-                    // if it's still empty.
-                    NXDocumentEditing.end()
-                    workbench.toggleNote(id)
-                } label: {
-                    // The design's 15 pt icon box inside its 3 pt padding, as the open icon's.
-                    Image(systemName: "text.alignleft").font(.system(size: 11, weight: .medium))
-                        .frame(width: 15, height: 15)
-                }
-                .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.07), radius: 6,
-                                                padding: EdgeInsets(top: 3, leading: 3, bottom: 3, trailing: 3),
-                                                foreground: noteOpen ? NX.ink : NX.ink(0.45), hoverForeground: NX.ink))
-                .onHover { noteHovering = $0 }
-                // Full strength under the pointer, as the design's hover has it.
-                // At rest it shows only while the note is open: a folded note
-                // already has its glyph after the title. Only the fade is
-                // animated, its `opacity 140ms ease`, as the open icon's: the
-                // colour and hover fill change at once.
-                .animation(NX.cssEase(140)) {
-                    $0.opacity(noteHovering ? 1 : noteOpen ? 0.9 : rowHovering || editing ? 0.5 : 0)
-                }
-                // Space does the same from the focused row; out of sight at
-                // rest, the button is no Tab stop.
-                .help(noteName(open: noteOpen) + (editing ? "" : " (Space)"))
-                .focusable(false)
-                .accessibilityLabel(noteName(open: noteOpen))
+                EmptyView()
             }
-            .onHover { rowHovering = $0 }
         }
-    }
-
-    /// What the note button does: hides the open note, shows a folded one,
-    /// or starts one on a task with none.
-    private func noteName(open: Bool) -> String {
-        open ? "Hide note" : task.note.isEmpty ? "Add a note" : "Show note"
     }
 
     private var progressChip: [NXChipModel] {
         guard let progress = context.progress[row.id], progress.total > 0 else { return [] }
         return [NXChipModel(id: "subtasks", label: "\(progress.done)/\(progress.total)", icon: "arrow.turn.down.right",
                             tone: progress.done == progress.total ? .green : .neutral, pops: .never)]
-    }
-}
-
-/// The notes glyph after a task's title whose note is folded away, set
-/// after the last line's text as the design's inline icon, or at the start
-/// of a line of its own when the last line has no room left for it.
-private struct NXNoteHint: View {
-    struct Placement {
-        let x: CGFloat
-        let y: CGFloat
-        /// On a line of its own under the title, which makes room for it.
-        let wraps: Bool
-    }
-
-    /// The pitch of a title's lines.
-    static let linePitch = (NXEditor.lineHeight(for: .task) * 2).rounded() / 2
-
-    static func placement(after content: NSAttributedString, width: CGFloat) -> Placement {
-        let end = NXTextMeasure.end(of: content, width: width)
-        // 7pt after the text, its 13pt box 2pt under the baseline.
-        let y = NXEditor.lineBoxInset(for: .task) + end.baseline - 11
-        guard width > 1, end.x + 7 + 13 > width else { return Placement(x: end.x + 7, y: y, wraps: false) }
-        return Placement(x: 0, y: y + linePitch, wraps: true)
-    }
-
-    let placement: Placement
-
-    var body: some View {
-        Image(systemName: "text.alignleft")
-            .font(.system(size: 10, weight: .medium))
-            .foregroundStyle(NX.ink(0.3))
-            .frame(width: 13, height: 13)
-            .offset(x: placement.x, y: placement.y)
-            .allowsHitTesting(false)
-            .accessibilityHidden(true)
     }
 }
 
@@ -707,7 +628,7 @@ private struct NXDocumentStrike: View {
 }
 
 /// Where a line's text ends, laid out by TextKit as its text view lays it.
-private enum NXTextMeasure {
+enum NXTextMeasure {
     static func end(of content: NSAttributedString, width: CGFloat) -> (x: CGFloat, baseline: CGFloat) {
         guard content.length > 0, width > 1 else { return (0, 13) }
         let storage = NSTextStorage(attributedString: content)
@@ -733,212 +654,6 @@ private enum NXTextMeasure {
         storage.addLayoutManager(layout)
         layout.ensureLayout(for: container)
         return layout.usedRect(for: container).width
-    }
-}
-
-/// A task's note written in place, or shown, under its title.
-private struct NXDocumentNote: View {
-    @Environment(AppEnvironment.self) private var env
-    let task: Block
-    let editing: Bool
-
-    var body: some View {
-        if editing {
-            let edit = env.workbench.noteEdit
-            NXNoteEditor(initial: task.note, caretColor: env.settings.accent.editorColor,
-                         onCommit: { commit($0, typing: $1, edit: edit) },
-                         onBackToTitle: { env.workbench.document?.edit(task.id) })
-                // Left and started again in one update, as the note button
-                // does to an empty note, the note gets a new editor, which
-                // takes the keyboard as the one left can't.
-                .id(edit)
-        } else {
-            let empty = task.note.isEmpty
-            let leading = max(0, 13 * 1.55 - NX.lineHeight(13))
-            Text(empty ? "Add a note…" : task.note)
-                .font(.system(size: 13))
-                .lineSpacing(leading)
-                // The note editor's ink, so a note reads the same written or shown.
-                .foregroundStyle(empty ? NX.textQuaternary : NX.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.vertical, leading / 2)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
-                .onTapGesture { env.workbench.editNote(task.id) }
-                .pointerStyle(.horizontalText)
-                .accessibilityAddTraits(.isButton)
-                .accessibilityHint("Edits the note")
-                .accessibilityAction { env.workbench.editNote(task.id) }
-        }
-    }
-
-    /// The design's note commit (`Workbench.setNote`, as the inspector's):
-    /// trailing space goes, the note stays open only if it has something,
-    /// and a change is one step, logged. An editor left behind by a newer
-    /// start of the note leaves that one open.
-    private func commit(_ text: String, typing: NSTextStorage, edit: Int) {
-        let workbench = env.workbench
-        if workbench.editingNoteID == task.id, workbench.noteEdit == edit { workbench.editingNoteID = nil }
-        if !Workbench.committedNote(text).isEmpty { workbench.openNotes.insert(task.id) }
-        // The note's typing folds into its one step.
-        let view = typing.layoutManagers.first?.firstTextView
-        view?.breakUndoCoalescing()
-        view?.undoManager?.removeAllActions(withTarget: typing)
-        guard let current = env.store.block(id: task.id) else { return }
-        workbench.setNote(text, of: current)
-    }
-}
-
-/// The note's textarea: 400 13/1.55 in the secondary ink. Return breaks the line; Esc,
-/// ⌘Return and Tab commit; ⇧Tab commits and goes back to the title. Leaving
-/// it by any other way commits too.
-private struct NXNoteEditor: NSViewRepresentable {
-    let initial: String
-    let caretColor: NSColor
-    let onCommit: (String, NSTextStorage) -> Void
-    let onBackToTitle: () -> Void
-
-    func makeCoordinator() -> Coordinator { Coordinator() }
-
-    func makeNSView(context: Context) -> NXNoteTextView {
-        let storage = NSTextStorage()
-        let layout = NSLayoutManager()
-        let container = NSTextContainer(size: CGSize(width: 0, height: CGFloat.greatestFiniteMagnitude))
-        container.widthTracksTextView = true
-        container.lineFragmentPadding = 0
-        layout.addTextContainer(container)
-        storage.addLayoutManager(layout)
-        let view = NXNoteTextView(frame: .zero, textContainer: container)
-        view.delegate = context.coordinator
-        view.isRichText = false
-        view.allowsUndo = true
-        view.drawsBackground = false
-        view.isVerticallyResizable = false
-        view.isHorizontallyResizable = false
-        view.isAutomaticQuoteSubstitutionEnabled = false
-        view.isAutomaticDashSubstitutionEnabled = false
-        view.isContinuousSpellCheckingEnabled = true
-        view.textContainerInset = NSSize(width: 0, height: NXNoteTextView.inset)
-        view.typingAttributes = NXNoteTextView.attributes
-        view.textStorage?.setAttributedString(NSAttributedString(string: initial, attributes: NXNoteTextView.attributes))
-        view.insertionPointColor = caretColor
-        context.coordinator.parent = self
-        // Once the view is in its window, the note takes the keyboard.
-        DispatchQueue.main.async { [weak view] in
-            guard let view, let window = view.window else { return }
-            window.makeFirstResponder(view)
-            view.setSelectedRange(NSRange(location: view.string.utf16.count, length: 0))
-        }
-        return view
-    }
-
-    func updateNSView(_ view: NXNoteTextView, context: Context) {
-        context.coordinator.parent = self
-    }
-
-    /// Taken away while it's still being written, the note keeps what was
-    /// typed, once the update that took it away is over.
-    static func dismantleNSView(_ view: NXNoteTextView, coordinator: Coordinator) {
-        coordinator.commit(view, later: true)
-    }
-
-    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NXNoteTextView, context: Context) -> CGSize? {
-        guard let width = proposal.width, width.isFinite, width > 1 else { return nil }
-        return CGSize(width: width, height: nsView.height(fittingWidth: width))
-    }
-
-    @MainActor
-    final class Coordinator: NSObject, NSTextViewDelegate {
-        var parent: NXNoteEditor?
-        private var committed = false
-
-        func textDidChange(_ notification: Notification) {
-            (notification.object as? NSView)?.invalidateIntrinsicContentSize()
-        }
-
-        func textDidEndEditing(_ notification: Notification) {
-            guard let view = notification.object as? NSTextView else { return }
-            commit(view)
-        }
-
-        func commit(_ view: NSTextView, later: Bool = false) {
-            guard !committed, let storage = view.textStorage, let parent else { return }
-            committed = true
-            let text = view.string
-            if later {
-                DispatchQueue.main.async { parent.onCommit(text, storage) }
-            } else {
-                parent.onCommit(text, storage)
-            }
-        }
-
-        func textView(_ textView: NSTextView, doCommandBy selector: Selector) -> Bool {
-            switch selector {
-            // Tab leaves the note, as it leaves the design's textarea, rather
-            // than typing a tab into it. ⌥Tab still types one.
-            case #selector(NSResponder.cancelOperation(_:)), #selector(NSResponder.insertTab(_:)):
-                textView.window?.makeFirstResponder(nil)
-                return true
-            case #selector(NSResponder.insertBacktab(_:)):
-                textView.window?.makeFirstResponder(nil)
-                parent?.onBackToTitle()
-                return true
-            default:
-                return false
-            }
-        }
-    }
-}
-
-/// The note's text view: self-sizing, with a placeholder and ⌘Return.
-final class NXNoteTextView: NSTextView {
-    static let font = NSFont.systemFont(ofSize: 13)
-    /// The design's 1.55 line box around TextKit's own line.
-    static let inset: CGFloat = max(0, 13 * 1.55 - NSLayoutManager().defaultLineHeight(for: font)) / 2
-    static let attributes: [NSAttributedString.Key: Any] = {
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.lineSpacing = inset * 2
-        return [.font: font, .foregroundColor: NXEditor.secondaryInk, .paragraphStyle: paragraph]
-    }()
-
-    override func keyDown(with event: NSEvent) {
-        if Self.commits(event) {
-            window?.makeFirstResponder(nil)
-            return
-        }
-        super.keyDown(with: event)
-    }
-
-    /// ⌘Return commits before the menus see it, so Task ▸ Open Details can't
-    /// take it from the note being written. Views are offered key equivalents
-    /// ahead of the main menu, this one only while it has the keyboard.
-    override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        guard Self.commits(event), window?.firstResponder === self else { return super.performKeyEquivalent(with: event) }
-        window?.makeFirstResponder(nil)
-        return true
-    }
-
-    private static func commits(_ event: NSEvent) -> Bool {
-        (event.keyCode == 36 || event.keyCode == 76)
-            && event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.command)
-    }
-
-    func height(fittingWidth width: CGFloat) -> CGFloat {
-        guard let container = textContainer, let layout = layoutManager else { return 20 }
-        container.containerSize = CGSize(width: width, height: .greatestFiniteMagnitude)
-        layout.ensureLayout(for: container)
-        let used = layout.usedRect(for: container)
-        let line = max(used.maxY, layout.extraLineFragmentRect.maxY, layout.defaultLineHeight(for: Self.font))
-        return ceil(line) + textContainerInset.height * 2
-    }
-
-    override func draw(_ dirtyRect: NSRect) {
-        super.draw(dirtyRect)
-        guard string.isEmpty else { return }
-        var attributes = Self.attributes
-        attributes[.foregroundColor] = NXEditor.placeholderInk
-        NSAttributedString(string: "Add a note…", attributes: attributes)
-            .draw(in: NSRect(origin: textContainerOrigin, size: bounds.size))
     }
 }
 
@@ -1345,12 +1060,11 @@ private struct NXLineMenu: View {
     }
 }
 
-/// Ends the writing of any document line or note, as a click away from it does.
+/// Ends the writing of any document line, as a click away from it does.
 enum NXDocumentEditing {
     @MainActor
     static func end() {
-        guard let window = NSApp.keyWindow,
-              window.firstResponder is BlockNSTextView || window.firstResponder is NXNoteTextView else { return }
+        guard let window = NSApp.keyWindow, window.firstResponder is BlockNSTextView else { return }
         window.makeFirstResponder(nil)
     }
 
@@ -1527,7 +1241,7 @@ private struct NXDocumentHints: View {
 
     private static let hints: [(key: String, label: String)] = [
         ("#", "Heading"), ("##", "Subheading"), ("-", "Bullet"), ("[ ]", "Task"),
-        ("/", "Turn into"), ("⇥", "Subtask"), ("⇧↩", "Note"), ("Space", "Show note"),
+        ("/", "Turn into"), ("⇥", "Subtask"), ("⇧↩", "Note"), ("Space", "Details"),
     ]
     private static let taskHints = hints.suffix(3)
 

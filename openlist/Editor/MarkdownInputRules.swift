@@ -170,7 +170,7 @@ enum MarkdownInputRules {
         var depth: Int
         var isCompleted: Bool
         /// The line's note, as Openlist content carries one. Markdown writes
-        /// a task's note as `> ` lines under it instead.
+        /// a task's note as its own Markdown, indented under it, instead.
         var note = ""
     }
 

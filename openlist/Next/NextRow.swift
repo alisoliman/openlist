@@ -11,7 +11,6 @@ struct NXRowOptions {
     /// Show the list chip, except for tasks in `listID`.
     var showList = true
     var listID: UUID?
-    var notes = false
     /// Tasks screen: text-only chips, the open icon hidden until focus.
     var quiet = false
     /// The clock the due and done-ago chips read. Screens on a timeline pass its
@@ -19,31 +18,34 @@ struct NXRowOptions {
     var now: Date?
 }
 
-/// A task row: rail, checkbox, text with strike, chips, selection mark and open icon.
+/// A task row: rail, checkbox, text with strike, chips, selection mark and
+/// open icon, and the glyph after its title that says it has a note.
 struct NextTaskRow: View {
     @Environment(AppEnvironment.self) private var env
     let task: Block
     var options = NXRowOptions()
     var depth = 0
+    /// The room the title has, to tell whether the note glyph fits after it.
+    @State private var titleWidth: CGFloat = 0
 
     var body: some View {
         let closing = env.workbench.closing[task.id]
+        let glyph = NXNoteGlyph.kind(of: task)
+        let placement = glyph.map { _ in NXNoteGlyph.placement(afterTitle: task.displayTitle, width: titleWidth) }
         NXTaskRowChrome(task: task, options: options, indent: CGFloat(depth) * 26) {
-            VStack(alignment: .leading, spacing: 2) {
-                NXStrikeText(text: task.displayTitle,
-                             struck: closing ?? task.isCompleted,
-                             closing: closing != nil,
-                             dimmed: task.isCompleted && closing == nil)
-                if options.notes, !task.note.isEmpty {
-                    Text(task.note.replacingOccurrences(of: "\n", with: " "))
-                        .font(.system(size: 12))
-                        .foregroundStyle(NX.textTertiary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                        // The design's 1.4 line box, its leading split above and below.
-                        .padding(.vertical, max(0, 12 * 1.4 - NX.lineHeight(12)) / 2)
+            NXStrikeText(text: task.displayTitle,
+                         struck: closing ?? task.isCompleted,
+                         closing: closing != nil,
+                         dimmed: task.isCompleted && closing == nil)
+                // A glyph with no room after the last line takes the next.
+                .padding(.bottom, placement?.wraps == true ? NXNoteGlyph.linePitch : 0)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { titleWidth = $0 }
+                .overlay(alignment: .topLeading) {
+                    if let glyph, let placement {
+                        NXNoteGlyph(kind: glyph, placement: placement) { env.workbench.inspect(task.id) }
+                    }
                 }
-            }
         }
     }
 }
@@ -888,6 +890,10 @@ struct NXTaskMenu: View {
         Divider()
         if ids.count == 1 {
             Button("Open Details", systemImage: "sidebar.right") { workbench.inspect(ids[0]) }
+            // Written in the details, never in the row.
+            Button(tasks.first?.note.isEmpty == false ? "Edit Note" : "Add Note", systemImage: "text.alignleft") {
+                workbench.writeNote(ids[0])
+            }
             // Off where work can't start, a done task included, as Task ▸'s is.
             Button("Start Working", systemImage: "play") { workbench.startWork(ids[0]) }
                 .disabled(tasks.first.flatMap { env.calendar.validWorkTask(WorkTaskReference($0)) } == nil)

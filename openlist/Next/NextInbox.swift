@@ -116,7 +116,7 @@ struct NextInboxDocumentScreen: View {
                 .onPreferenceChange(NXDocumentRowsKey.self) { documentRowIDs = $0 }
             // The design's 20s clock, so Completed's done-ago chips move on.
             TimelineView(.periodic(from: .now, by: 20)) { context in
-                NXGroupsStack(groups: groups, options: NXRowOptions(showList: false, listID: inbox.id, notes: true,
+                NXGroupsStack(groups: groups, options: NXRowOptions(showList: false, listID: inbox.id,
                                                                     now: context.date))
             }
         }
@@ -167,16 +167,18 @@ private struct NXTriageCard: View {
             .padding(.top, 12 + titleLeading / 2)
             .padding(.horizontal, 18)
             .padding(.bottom, 4 + titleLeading / 2)
-            // What the task holds, so it can be filed without opening it.
-            if !editing, !task.note.isEmpty {
-                Text(task.note)
+            // What the task holds, so it can be filed without opening it: its
+            // note's words, without the Markdown they're written in.
+            let note = editing ? "" : NoteMarkdown.plainText(task.note)
+            if !note.isEmpty {
+                Text(note)
                     .font(.system(size: 13))
                     .foregroundStyle(NX.textSecondary)
                     .lineLimit(2)
                     .truncationMode(.tail)
                     .padding(.horizontal, 18)
                     .padding(.bottom, 4)
-                    .accessibilityLabel("Note: \(task.note)")
+                    .accessibilityLabel("Note: \(note)")
             }
             HStack(spacing: 6) {
                 ForEach(editing ? editChips : chips) { chip in

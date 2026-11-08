@@ -451,7 +451,7 @@ struct NXCaptureCard<Draft: NXCaptureDraft>: View {
         }
 
         if writesNote {
-            TextField("Note", text: $draft.captureNote, axis: .vertical)
+            TextField("Add a note…", text: $draft.captureNote, axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(.system(size: 13))
                 .foregroundStyle(NX.textSecondary)

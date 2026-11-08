@@ -587,6 +587,23 @@ do {
     check(NoteMarkdown.continuation(of: "- ") == .end(bulletLength: 2) && NoteMarkdown.continuation(of: "- [ ] ") == .end(bulletLength: 6),
           "Return on an empty item ends the list")
     check(NoteMarkdown.continuation(of: "text") == nil && NoteMarkdown.continuation(of: "-dash") == nil, "other lines just break")
+
+    let maps = "https://www.google.com/maps/place/Hakone+Yumoto+Onsen/@35.23,139.10,15z"
+    check(NoteMarkdown.soleLink(in: "  \(maps)\n") == URL(string: maps), "a note that's one bare address is that link")
+    check(NoteMarkdown.soleLink(in: "[Ryokan](https://example.com/r)") == URL(string: "https://example.com/r"),
+          "a note that's one Markdown link is its address")
+    check(NoteMarkdown.soleLink(in: "Booking: \(maps)") == nil && NoteMarkdown.soleLink(in: "\(maps)\n\(maps)") == nil,
+          "words or a second line make it a note")
+    check(NoteMarkdown.soleLink(in: "javascript:alert(1)") == nil && NoteMarkdown.soleLink(in: "[x](file:///etc/hosts)") == nil
+          && NoteMarkdown.soleLink(in: "https://") == nil, "only web, mail and Openlist addresses open")
+    check(NoteMarkdown.shortAddress(URL(string: maps)!) == "google.com/maps"
+          && NoteMarkdown.shortAddress(URL(string: "https://example.com")!) == "example.com", "an address named by its host and first step")
+    check(NoteMarkdown.plainText("## Plan\nGet **¥80,000** — [rates](https://wise.com/x)\n\n\n- [x] Compare\n- [ ] Order")
+          == "Plan\nGet ¥80,000 — rates\n\n• Compare\n• Order", "plain text drops the syntax, keeps the words",
+          NoteMarkdown.plainText("## Plan\nGet **¥80,000** — [rates](https://wise.com/x)\n\n\n- [x] Compare\n- [ ] Order"))
+    check(NoteMarkdown.plainText("See \(maps) now") == "See google.com/maps now", "a bare address reads as where it goes")
+    check(NoteMarkdown.plainText("```\nlet x = 1\n```\n---\n> said") == "let x = 1\n\nsaid", "fences and rules go, a quote's words stay",
+          NoteMarkdown.plainText("```\nlet x = 1\n```\n---\n> said"))
 }
 
 // MARK: - Summary

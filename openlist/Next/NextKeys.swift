@@ -127,7 +127,7 @@ final class NextKeyHandler {
 
         // After Return, Backspace, Tab, Add subtask or a line turning into
         // another kind, the list document's caret is on its way to a line,
-        // and after ⇧↩ or Space a note is about to take the keyboard. Keys
+        // and after ⇧↩ or Edit Note the details' note is about to take the keyboard. Keys
         // typed meanwhile wait for it, in order, rather than type into the
         // line or text view it left or reach the single-key map.
         if !flags.contains(.command), !heldKeys.isEmpty || isAwaitingKeyboard(in: window) {
@@ -352,16 +352,20 @@ final class NextKeyHandler {
                                                   Key.space, Key.tab, Key.escape]
 
     /// Whether the list document is moving its caret, or opening to write a
-    /// subtask, or a note is about to take the keyboard, and keys should wait
-    /// for where they're going.
+    /// subtask, or the details' note is about to take the keyboard, and keys
+    /// should wait for where they're going.
     private func isAwaitingKeyboard(in window: NSWindow) -> Bool {
         let workbench = env.workbench
         if workbench.document?.isMovingCaret == true { return true }
         if workbench.pendingSubtaskParentID != nil, let requested = workbench.subtaskRequestedAt,
            Date.now.timeIntervalSince(requested) < 0.4 { return true }
-        guard workbench.editingNoteID != nil, !(window.firstResponder is NXNoteTextView),
-              let requested = workbench.noteEditRequestedAt else { return false }
+        guard let requested = workbench.noteWritingRequestedAt, !Self.isWritingNote(in: window) else { return false }
         return Date.now.timeIntervalSince(requested) < 0.4
+    }
+
+    /// The details' note has the keyboard.
+    private static func isWritingNote(in window: NSWindow) -> Bool {
+        (window.firstResponder as? NXInspectorTextView)?.role == .note
     }
 
     /// ↑/↓ move `index`, Return runs the current item, Escape closes, and Tab
@@ -408,7 +412,7 @@ final class NextKeyHandler {
             if document?.isMovingCaret == true { document?.requestFocus(nil) }
             let keys = self.heldKeys
             self.heldKeys = []
-            let landed = !waiting && (window.firstResponder is NXNoteTextView
+            let landed = !waiting && (Self.isWritingNote(in: window)
                 || document.map { $0.focus.blockID != nil && !$0.isMovingCaret } == true)
             guard landed else { return }
             // Straight to the window, past this monitor: each key reaches the
@@ -516,6 +520,11 @@ final class NextKeyHandler {
             announceFocus()
             return true
         case Key.enter, Key.keypadEnter:
+            // ⇧↩ writes the focused task's note, in its details.
+            if shift, workbench.selection.isEmpty, let id = workbench.focusID, env.store.block(id: id)?.isTask == true {
+                workbench.writeNote(id)
+                return true
+            }
             // A list document's heading or text, left with Escape, has no
             // details: Return writes it again.
             if workbench.focusID == nil, workbench.selection.isEmpty, workbench.document?.resumeEditing() == true { return true }
@@ -544,11 +553,12 @@ final class NextKeyHandler {
             workbench.document?.indent(workbench.targetIDs, outdent: shift)
             return true
         case Key.space:
-            // Notes open in place, in the document's own rows. Elsewhere
-            // there's no note to show, and Space does nothing, unless Full
+            // The focused task's details, beside the screen, show or hide, as
+            // Quick Look does. The page covers the rows, so Space waits for
+            // it to go back. With no row, Space does nothing, unless Full
             // Keyboard Access has it press the control that has focus.
-            if let id = workbench.focusID, workbench.document?.shows(id) == true {
-                workbench.toggleNote(id)
+            if let id = workbench.focusID, env.store.block(id: id)?.isTask == true {
+                if !workbench.isTaskPageOpen { workbench.toggleDetails(id) }
                 return true
             }
             return !NSApp.isFullKeyboardAccessEnabled

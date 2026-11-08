@@ -194,6 +194,79 @@ nonisolated enum NoteMarkdown {
         return .next("\(indent)\(bullet) ")
     }
 
+    // MARK: Links
+
+    private static let soleBareURL = regex(#"^https?://\S+$"#)
+    private static let soleMarkdownLink = regex(#"^\[[^\]\n]+\]\(([^()\s]+)\)$"#)
+
+    /// The link a note is made of when it holds nothing else: one bare
+    /// address, or one `[words](address)`, alone. A row shows such a note as
+    /// a link that opens, rather than as text to read.
+    static func soleLink(in note: String) -> URL? {
+        let text = note.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, !text.contains(where: \.isNewline) else { return nil }
+        let whole = NSRange(location: 0, length: (text as NSString).length)
+        if soleBareURL.firstMatch(in: text, range: whole) != nil { return openable(text) }
+        guard let match = soleMarkdownLink.firstMatch(in: text, range: whole) else { return nil }
+        return openable((text as NSString).substring(with: match.range(at: 1)))
+    }
+
+    /// An address a click may open: on the web, a mail, or an item in this
+    /// library. Anything else stays text.
+    static func openable(_ address: String) -> URL? {
+        guard let url = URL(string: address), let scheme = url.scheme?.lowercased(),
+              ["http", "https", "mailto", "openlist", "openlist-dev"].contains(scheme) else { return nil }
+        if scheme.hasPrefix("http"), url.host?.isEmpty != false { return nil }
+        return url
+    }
+
+    /// Where an address goes, short enough to name it: its host without
+    /// `www.`, and the first step of its path, as `google.com/maps`.
+    static func shortAddress(_ url: URL) -> String {
+        guard let host = url.host, !host.isEmpty else { return url.absoluteString }
+        let name = host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+        guard let first = url.pathComponents.first(where: { $0 != "/" && !$0.isEmpty }) else { return name }
+        return name + "/" + first
+    }
+
+    // MARK: Plain text
+
+    /// The note as words to read in a line or two, like triage's preview:
+    /// the Markdown's syntax left out, a link's words kept, a bare address
+    /// shortened to where it goes, list items as bullets, and no blank runs.
+    static func plainText(_ note: String) -> String {
+        let source = note as NSString
+        var drops: [NSRange] = []
+        var swaps: [(NSRange, String)] = []
+        for span in spans(in: note) where span.range.length > 0 {
+            switch span.kind {
+            case .marker:
+                drops.append(span.range)
+            case .url:
+                let address = source.substring(with: span.range)
+                swaps.append((span.range, URL(string: address).map(shortAddress) ?? address))
+            case .bullet:
+                // A list's bullet or box reads as a bullet; a rule as nothing.
+                let syntax = source.substring(with: span.range).trimmingCharacters(in: .whitespaces)
+                let rule = syntax.allSatisfy { "-*_ \t".contains($0) } && syntax.count >= 3
+                swaps.append((span.range, rule ? "" : "• "))
+            default:
+                break
+            }
+        }
+        let edits = (drops.map { ($0, "") } + swaps).sorted { $0.0.location > $1.0.location }
+        let result = NSMutableString(string: note)
+        var floor = source.length
+        for (range, replacement) in edits where NSMaxRange(range) <= floor {
+            result.replaceCharacters(in: range, with: replacement)
+            floor = range.location
+        }
+        let lines = (result as String).components(separatedBy: .newlines).map { $0.trimmingCharacters(in: .whitespaces) }
+        var kept: [String] = []
+        for line in lines where !(line.isEmpty && (kept.last?.isEmpty ?? true)) { kept.append(line) }
+        return kept.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private static func regex(_ pattern: String) -> NSRegularExpression {
         // The patterns are fixed, so one that fails to compile is a bug here.
         try! NSRegularExpression(pattern: pattern)
