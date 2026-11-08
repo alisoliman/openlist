@@ -691,7 +691,7 @@ private nonisolated struct NXHatch: Shape {
 /// A focused block's accent ring, outside its edge as the design's
 /// `0 0 0 2px` box-shadow is. Its spread animates, so it grows out from the
 /// edge and shrinks back as the shadow's does. A card's follows its corners.
-private nonisolated struct NXFocusRing: Shape {
+nonisolated struct NXFocusRing: Shape {
     var spread: CGFloat
     var radius: CGFloat = 7
 
@@ -706,6 +706,27 @@ private nonisolated struct NXFocusRing: Shape {
         path.addRoundedRect(in: rect, cornerSize: CGSize(width: radius, height: radius), style: .continuous)
         return path
     }
+}
+
+/// A planned task session as the Calendar and Today's schedule draw it: a
+/// grey card with the task's checkbox in its list's colour, work under way
+/// solid ink, done a green tint, and a slot gone by without work dashed red.
+struct NXSessionLook {
+    var working: Bool
+    var done: Bool
+    var missed: Bool
+    /// The task's list's colour, for its checkbox.
+    var listColor: Color?
+
+    var foreground: Color { working ? NX.onPrimary : done ? NX.ink(0.5) : NX.ink }
+    var fill: Color { working ? NX.primaryButton : done ? NX.green.opacity(0.1) : missed ? NX.card.opacity(0.7) : NX.card }
+    var ring: Color { working ? .clear : done ? NX.green.opacity(0.28) : missed ? NX.red.opacity(0.35) : NX.ink(0.12) }
+    /// The checkbox's ring while the task is open.
+    var circle: Color { working ? NX.onPrimary : listColor ?? NX.ink(0.45) }
+    /// The time and state under the title.
+    var detail: Color { working ? NX.onPrimary.opacity(0.8) : missed ? NX.redText : NX.textTertiary }
+    /// The dashes around a slot gone by.
+    static let missedDash = NX.red.opacity(0.45)
 }
 
 private struct NXCalendarBlock: View {
@@ -730,9 +751,6 @@ private struct NXCalendarBlock: View {
     var body: some View {
         let workbench = env.workbench
         let task = env.store.block(id: block.taskID)
-        // The list's colour marks only the block's circle: the block is a
-        // grey card, and work under way is solid ink.
-        let color = library.list(task?.listID)?.nxColor ?? NX.ink(0.45)
         let closing = workbench.closing[block.taskID] != nil
         let done = block.isCompleted || task?.isCompleted == true || closing
         let running = block.isActive
@@ -745,9 +763,12 @@ private struct NXCalendarBlock: View {
         let meta = note(missed: missed, running: running, working: working, isNow: isNow)
         // Inspected, or its row focused for the keys.
         let focused = env.navigator.openTaskID == block.taskID || workbench.focusID == block.taskID
-        let fg: Color = working ? NX.onPrimary : done ? NX.ink(0.5) : NX.ink
-        let background: Color = working ? NX.primaryButton : done ? NX.green.opacity(0.1) : missed ? NX.card.opacity(0.7) : NX.card
-        let ring: Color = working ? .clear : done ? NX.green.opacity(0.28) : missed ? NX.red.opacity(0.35) : NX.ink(0.12)
+        // The list's colour marks only the block's circle: the block is a
+        // grey card, and work under way is solid ink, as on Today.
+        let look = NXSessionLook(working: working, done: done, missed: missed, listColor: library.list(task?.listID)?.nxColor)
+        let fg = look.foreground
+        let background = look.fill
+        let ring = look.ring
         let fresh = workbench.freshBlockTaskID == block.taskID
         let title = task?.displayTitle ?? block.titleSnapshot ?? "Task"
         // A slot of open work moves; running work and what's done stay put.
@@ -764,7 +785,7 @@ private struct NXCalendarBlock: View {
                         Image(systemName: "checkmark").font(.system(size: 7, weight: .bold))
                             .foregroundStyle(closing ? style.onAccent : .white)
                     } else {
-                        Circle().strokeBorder(working ? NX.onPrimary : color, lineWidth: 1.3)
+                        Circle().strokeBorder(look.circle, lineWidth: 1.3)
                     }
                 }
                 .frame(width: 12, height: 12)
@@ -790,7 +811,7 @@ private struct NXCalendarBlock: View {
             if height >= 34 {
                 Text(time + (meta.map { " · " + $0 } ?? ""))
                     .font(.system(size: 9.5, weight: .medium))
-                    .foregroundStyle(working ? NX.onPrimary.opacity(0.8) : missed ? NX.redText : NX.textTertiary)
+                    .foregroundStyle(look.detail)
                     .lineSpacing(NXCal.timeLeading)
                     .padding(.vertical, NXCal.timeLeading / 2)
                     .padding(.leading, 17)
@@ -812,7 +833,7 @@ private struct NXCalendarBlock: View {
         .overlay {
             if missed {
                 RoundedRectangle(cornerRadius: 7, style: .continuous)
-                    .strokeBorder(NX.red.opacity(0.45), style: StrokeStyle(lineWidth: 1, dash: [3, 2]))
+                    .strokeBorder(NXSessionLook.missedDash, style: StrokeStyle(lineWidth: 1, dash: [3, 2]))
             }
         }
         .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))

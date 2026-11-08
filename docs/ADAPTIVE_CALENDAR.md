@@ -46,8 +46,8 @@ remaining work.
 what's on **now** and **next**, then the rest of the day on its hours with a now
 line, from an hour before now to the day's last item. **Earlier today** unfolds
 the part of the day already gone. Meetings are quiet grey blocks; planned task
-sessions are outlined cards with the task's checkbox and its list's dot, and the
-item under way or next is drawn heavier. Hovering a meeting shows its time,
+sessions look as they do on the Calendar, cards with the task's checkbox in its
+list's colour, and the item under way or next is drawn heavier. Hovering a meeting shows its time,
 length, place and calendar. Clicking a session selects its task, as a row click
 does, and double-clicking opens it; its menu also has **Remove from Calendar**
 and **Show in Calendar**. A session planned now offers **Start**.

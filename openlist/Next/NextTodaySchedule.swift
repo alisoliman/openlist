@@ -106,8 +106,8 @@ private enum NXSchedulePresentation { case column, strip }
 
 /// Today's meetings and planned task sessions: what's on now and next, then
 /// the rest of the day on its hours, with a now line. Meetings and sessions
-/// differ by form, not colour: a meeting is a quiet grey block, a session an
-/// outlined card with its checkbox, its title in full ink and its list's dot.
+/// differ by form, not colour: a meeting is a quiet grey block, a session a
+/// card with its checkbox in its list's colour, as the Calendar draws it.
 /// It reads what the Calendar draws and plans nothing itself; Plan, Find a
 /// Slot and Fit into calendar show here as they land.
 private struct NXTodaySchedule: View {
@@ -486,7 +486,7 @@ private struct NXScheduleSummary: View {
                 }
                 .buttonStyle(NXHoverButtonStyle(hover: NX.primaryButtonHover, rest: NX.primaryButton, radius: 12,
                                                 padding: EdgeInsets(top: 6, leading: 6, bottom: 6, trailing: 6),
-                                                foreground: .white, hoverForeground: .white))
+                                                foreground: NX.onPrimary, hoverForeground: NX.onPrimary))
                 .help("Start working")
                 .accessibilityLabel("Start working on \(item.title)")
                 .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
@@ -736,11 +736,11 @@ private struct NXScheduleMeeting: View {
     }
 }
 
-/// A planned task session: an outlined card with the task's checkbox, its
-/// title in full ink and its list's dot. Under way it's outlined in ink, next
-/// a little firmer than the rest; done it's struck through and quiet; a slot
-/// gone by without work stays, dashed, as carried forward. A click selects
-/// its task, a double-click opens it, as a row's do.
+/// A planned task session, drawn as the Calendar draws it (`NXSessionLook`):
+/// a grey card with the task's checkbox in its list's colour, work under way
+/// solid ink, done a green tint, a slot gone by without work dashed red. On
+/// Today what's on now, and next, is outlined a step heavier. A click
+/// selects its task, a double-click opens it, as a row's do.
 private struct NXScheduleSession: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.nextStyle) private var style
@@ -765,23 +765,28 @@ private struct NXScheduleSession: View {
         let focused = workbench.focusID == block.taskID || env.navigator.openTaskID == block.taskID
         let list = library.list(task?.listID)
         let movable = block.placementID != nil && !block.isActive && !done && task?.occurrenceID == block.occurrenceID
+        // The Calendar's look, so a session reads the same on both screens.
+        let look = NXSessionLook(working: working, done: done, missed: missed, listColor: list?.nxColor)
+        // Today draws what's on now, and next, a step heavier.
+        let plain = !working && !done && !missed
+        let ring: Color = plain && emphasis == .current ? NX.ink(0.6) : plain && emphasis == .next ? NX.ink(0.3) : look.ring
         let shape = RoundedRectangle(cornerRadius: 7, style: .continuous)
-        let border: Color = done ? .clear : working || emphasis == .current ? NX.ink(0.72)
-            : emphasis == .next ? NX.ink(0.32) : NX.ink(missed ? 0.28 : 0.17)
         let note = note(done: done, working: working, missed: missed)
 
         VStack(alignment: .leading, spacing: 1) {
             HStack(alignment: .top, spacing: 5) {
                 ZStack {
                     if done {
-                        Circle().fill(closing ? NX.ink(0.55) : NX.green)
-                        Image(systemName: "checkmark").font(.system(size: 6.5, weight: .bold)).foregroundStyle(.white)
+                        // From the accent to green as the completion settles, as the Calendar's.
+                        Circle().animation(NX.cssEase(200)) { $0.foregroundStyle(closing ? style.accent : NX.green) }
+                        Image(systemName: "checkmark").font(.system(size: 7, weight: .bold))
+                            .foregroundStyle(closing ? style.onAccent : .white)
                     } else {
-                        Circle().strokeBorder(NX.ink(working || emphasis == .current ? 0.7 : 0.4), lineWidth: 1.2)
+                        Circle().strokeBorder(look.circle, lineWidth: 1.3)
                     }
                 }
-                .frame(width: 11, height: 11)
-                .padding(.top, 1.5)
+                .frame(width: 12, height: 12)
+                .padding(.top, 1)
                 // Wider than the circle it draws, as a row's checkbox is.
                 .contentShape(Circle().inset(by: -5))
                 .onTapGesture(perform: check)
@@ -790,7 +795,7 @@ private struct NXScheduleSession: View {
                     Text(title)
                         .font(.system(size: 11, weight: .semibold))
                         .strikethrough(done)
-                        .foregroundStyle(done ? NX.textTertiary : missed ? NX.textSecondary : NX.ink)
+                        .foregroundStyle(look.foreground)
                         .lineLimit(height < 30 ? 1 : nil)
                         .truncationMode(.tail)
                         .lineSpacing(NXDay.titleLeading)
@@ -801,14 +806,9 @@ private struct NXScheduleSession: View {
                         Text(NXFormat.clock(block.start))
                             .font(.system(size: 10, weight: .medium))
                             .monospacedDigit()
-                            .foregroundStyle(missed ? NX.redText : NX.textTertiary)
+                            .foregroundStyle(look.detail)
                             .fixedSize()
                     }
-                }
-                if let list, !done, width >= 90 {
-                    Circle().fill(list.nxColor).frame(width: 6, height: 6)
-                        .padding(.top, 4.5)
-                        .accessibilityHidden(true)
                 }
             }
             .fixedSize(horizontal: false, vertical: true)
@@ -816,33 +816,35 @@ private struct NXScheduleSession: View {
                 Text(NXDay.range(block.start, block.end) + (note.map { " · " + $0 } ?? ""))
                     .font(.system(size: 10, weight: .medium))
                     .monospacedDigit()
-                    .foregroundStyle(missed ? NX.redText : NX.textTertiary)
+                    .foregroundStyle(look.detail)
                     .lineSpacing(NXDay.timeLeading)
                     .padding(.vertical, NXDay.timeLeading / 2)
-                    .padding(.leading, 16)
+                    .padding(.leading, 17)
             }
         }
         .padding(.vertical, 3)
         .padding(.horizontal, 6)
+        // A missed block's content keeps inside its dashed border, as the Calendar's.
+        .padding(missed ? 1 : 0)
         .frame(maxWidth: .infinity, minHeight: 0, maxHeight: .infinity, alignment: .topLeading)
-        .background(done ? NX.ink(0.03) : NX.card, in: shape)
+        .background(look.fill, in: shape)
+        .overlay(RoundedRectangle(cornerRadius: missed ? 6 : 7, style: .continuous)
+            .strokeBorder(ring, lineWidth: plain && emphasis == .current ? 1.5 : 1)
+            .padding(missed ? 1 : 0))
         .overlay {
             if missed {
-                shape.strokeBorder(border, style: StrokeStyle(lineWidth: 1, dash: [3, 2]))
-            } else {
-                shape.strokeBorder(border, lineWidth: working || emphasis == .current ? 1.5 : 1)
+                shape.strokeBorder(NXSessionLook.missedDash, style: StrokeStyle(lineWidth: 1, dash: [3, 2]))
             }
         }
         .clipShape(shape)
-        // Selected, or open in the details: an ink ring outside its edge.
+        // Selected, or open in the details: the Calendar's focus ring.
         .overlay {
-            RoundedRectangle(cornerRadius: 9, style: .continuous)
-                .strokeBorder(NX.ink(focused ? 0.85 : 0), lineWidth: 1.5)
-                .padding(-2.5)
-                .animation(NX.cssEase(180), value: focused)
+            NXFocusRing(spread: focused ? 2 : 0)
+                .fill(style.accent.opacity(focused ? 1 : 0), style: FillStyle(eoFill: true))
+                .animation(NX.cssEase(240), value: focused)
                 .allowsHitTesting(false)
         }
-        .brightness(hovering && !done ? -0.025 : 0)
+        .brightness(hovering ? -0.03 : 0)
         // Planned just now: it arrives, as the Calendar's blocks do; with
         // Reduce Motion it fades in.
         .offset(y: entered || !style.slides ? 0 : -6)
