@@ -64,11 +64,15 @@ private struct NXTodayPage: View {
                 NXScreenHeader(tile: .icon("sun.max.fill"), title: "Today",
                                subtitle: now.formatted(.dateTime.weekday(.wide).day().month(.wide)),
                                progress: model.progress)
-                if model.clear {
-                    todayClear(done: model.progress.done)
+                // The day's meetings and planned sessions beside the tasks,
+                // or folded above them on a narrow page.
+                NXTodayWithSchedule(now: now, toPlan: model.toPlan) {
+                    if model.clear {
+                        todayClear(done: model.progress.done)
+                    }
+                    NXGroupsStack(groups: model.groups, options: NXRowOptions(now: now))
+                    NXAddRow(text: "Add a task for today", forToday: true)
                 }
-                NXGroupsStack(groups: model.groups, options: NXRowOptions(now: now))
-                NXAddRow(text: "Add a task for today", forToday: true)
             }
         }
     }
@@ -77,6 +81,10 @@ private struct NXTodayPage: View {
         var groups: [NXGroup]
         var progress: (done: Int, total: Int)
         var clear: Bool
+        /// Today's open tasks with no time: no slot on the calendar and no
+        /// time to be due at, which the schedule offers to fit, as the
+        /// phone's timeline does.
+        var toPlan: [UUID] = []
     }
 
     /// Today's groups keep their task order and carry subtasks beneath each
@@ -130,7 +138,13 @@ private struct NXTodayPage: View {
                                   rows: doneToday.map(\.block), rowDepths: depths(doneToday), taskCount: count(doneToday), collapsible: true,
                                   defaultOpen: showsCompleted, completed: true))
         }
-        return Model(groups: groups, progress: agenda.progress, clear: agenda.isClear)
+        let placed = workbench.placedTaskIDs(now: now)
+        let working = workbench.workTask?.id
+        let toPlan = agenda.scheduled.filter { task in
+            !task.isCompleted && !task.includesTime && !placed.contains(task.id) && task.id != working
+                && workbench.closing[task.id] == nil
+        }.map(\.id)
+        return Model(groups: groups, progress: agenda.progress, clear: agenda.isClear, toPlan: toPlan)
     }
 
     private func todayClear(done: Int) -> some View {

@@ -206,13 +206,13 @@ private struct NXCalendarBody: View {
     }
 
     private var events: [FixedBusyTime] {
-        busy.filter { $0.end.timeIntervalSince($0.start) < 20 * 3600 }
+        busy.filter { !$0.isAllDayHold }
     }
 
     /// Holds of 20 hours or more, like Out of office: no meeting to draw, but
     /// Plan keeps clear of them, so the day's header names them.
     private var holds: [FixedBusyTime] {
-        busy.filter { $0.end.timeIntervalSince($0.start) >= 20 * 3600 }
+        busy.filter(\.isAllDayHold)
     }
 
     /// The slot running now, with nothing to work on in hand: the design's

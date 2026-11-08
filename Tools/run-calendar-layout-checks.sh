@@ -7,5 +7,7 @@ xcrun swiftc -swift-version 6 -O -o "$OUT/calendar-layout-checks" \
     openlist/Model/CalendarTypes.swift \
     openlist/Views/CalendarOverlapLayout.swift \
     openlist/Views/CalendarMonthGrid.swift \
+    openlist/Views/TodaySchedule.swift \
+    Tools/CalendarLayoutChecks/TodayScheduleChecks.swift \
     Tools/CalendarLayoutChecks/main.swift
 "$OUT/calendar-layout-checks"
