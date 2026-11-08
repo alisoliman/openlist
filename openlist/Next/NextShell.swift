@@ -66,6 +66,8 @@ struct NextShell: View {
             adaptSidebar()
         }
         .onChange(of: env.workbench.isTaskPageOpen) { adaptSidebar() }
+        // Dragged wider, the details can take the sidebar's room too.
+        .onChange(of: env.workbench.detailsWidth) { adaptSidebar() }
         // Settings has the details' room while it's open.
         .onChange(of: env.navigator.route == .settings) { adaptSidebar() }
         // Shown by hand where there's room anyway, it folds for room again later.
@@ -109,10 +111,10 @@ struct NextShell: View {
     /// takes its right, and gets the sidebar back once the inspector closes
     /// or there's room again; a native extra. The inspector squeezes the page
     /// rather than covering it, so what folding helps is the page's width
-    /// beside the sidebar and the 360pt inspector. It folds only while the
-    /// page would be narrower than the inspector, under 956pt, where past its
-    /// 40pt margins rows show less than 280pt, and comes back 120pt wider,
-    /// so a resize doesn't flip it. View ▸ Hide Sidebar is separate, so this
+    /// beside the sidebar and the details at the width they were dragged to.
+    /// It folds only while the page would be narrower than 360pt, where past
+    /// its 40pt margins rows show less than 280pt, and comes back 120pt
+    /// wider, so a resize doesn't flip it. View ▸ Hide Sidebar is separate, so this
     /// never shows a sidebar the user hid, and one the user showed again
     /// stays, until the inspector closes or there's room. The task opened
     /// out as a page takes the pane's room rather than squeezing it.
@@ -120,7 +122,7 @@ struct NextShell: View {
         let workbench = env.workbench
         let inspecting = !workbench.isTaskPageOpen && workbench.inspectedTaskID.flatMap { env.store.block(id: $0) }
             .map { $0.isTask && $0.trashID == nil } ?? false
-        let page = width - 236 - 360
+        let page = width - 236 - workbench.detailsWidth
         let roomy = !inspecting || page >= 480
         if roomy, workbench.isSidebarKeptOverRoom { workbench.isSidebarKeptOverRoom = false }
         var folded = workbench.isSidebarFoldedForRoom

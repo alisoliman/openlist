@@ -140,4 +140,16 @@ try await runWorkbenchAdjudicationChecks()
 try await runVoiceWorkbenchChecks()
 runWindowWorkbenchChecks()
 
+// The details beside the screen keep the width they're dragged to, between
+// 420 and 720pt, on this Mac.
+check(workbench.detailsWidth == 520, "the details start 520pt wide")
+workbench.detailsWidth = 300
+check(workbench.detailsWidth == 420, "dragged narrower, the details stop at 420")
+workbench.detailsWidth = 1000
+check(workbench.detailsWidth == 720, "dragged wider, they stop at 720")
+workbench.detailsWidth = 610.4
+let reopened = Workbench(store: store, navigator: Navigator(defaults: defaults), settings: settings, calendar: coordinator,
+                         defaults: defaults)
+check(reopened.detailsWidth == 610, "the width is kept for the next window")
+
 print("✅ \(checks) widget workbench checks passed")
