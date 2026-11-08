@@ -54,10 +54,13 @@ nonisolated struct WidgetStyle: Equatable, Sendable {
 
     var isVibrant: Bool { mode == .vibrant }
 
-    init(mode: Mode, accentHex: UInt32 = 0x7C4DF0, serifTitles: Bool = true, showsBackground: Bool = true) {
+    init(mode: Mode, accentHex: UInt32 = WidgetSnapshot.neutralAccentHex, serifTitles: Bool = true, showsBackground: Bool = true) {
         self.mode = mode
         self.serifTitles = serifTitles
         self.showsBackground = showsBackground
+        // Neutral's accent is the ink, so it flips with the appearance and
+        // its fills carry the background's colour for words.
+        let neutral = accentHex == WidgetSnapshot.neutralAccentHex
         switch mode {
         case .light:
             let ink: UInt32 = 0x17161A
@@ -76,11 +79,11 @@ nonisolated struct WidgetStyle: Equatable, Sendable {
             blue = Self.rgb(ListAccent.inboxHex)
             blueChip = Self.rgb(ListAccent.inboxHex, 0.12)
             onAcc = Self.rgb(0xFFFFFF)
-            accShadow = Self.rgb(accentHex, 0.32)
+            accShadow = Self.rgb(accentHex, neutral ? 0.2 : 0.32)
             meet = Self.rgb(ink, 0.055)
         case .dark:
             let ink: UInt32 = 0xF4F2F7
-            let accent = Self.darkAccent(accentHex)
+            let accent = neutral ? ink : Self.darkAccent(accentHex)
             bg = Self.rgb(0x232128)
             self.ink = Self.rgb(ink)
             sub = Self.rgb(ink, 0.6)
@@ -95,8 +98,8 @@ nonisolated struct WidgetStyle: Equatable, Sendable {
             amber = Self.rgb(0xF2C14E)
             blue = Self.rgb(0x6AA1F0)
             blueChip = Self.rgb(0x6AA1F0, 0.16)
-            onAcc = Self.rgb(0xFFFFFF)
-            accShadow = Self.rgb(accent, 0.3)
+            onAcc = Self.rgb(neutral ? 0x232128 : 0xFFFFFF)
+            accShadow = neutral ? .clear : Self.rgb(accent, 0.3)
             meet = Self.rgb(ink, 0.08)
         case .vibrant:
             let white: UInt32 = 0xFFFFFF
@@ -200,10 +203,10 @@ nonisolated struct WidgetStyle: Equatable, Sendable {
               opacity: opacity)
     }
 
-    /// The accent lifted for dark backgrounds. The default violet uses the
-    /// design's hand-picked value; other accents are brightened and slightly
+    /// A hue accent lifted for dark backgrounds. Violet uses the design's
+    /// hand-picked value; other accents are brightened and slightly
     /// desaturated the same way, which keeps them readable on #232128
-    /// without glowing.
+    /// without glowing. Neutral never comes here: it turns to the ink.
     static func darkAccent(_ hex: UInt32) -> UInt32 {
         if hex == 0x7C4DF0 { return 0x9B78FF }
         let r = Double((hex >> 16) & 0xFF) / 255

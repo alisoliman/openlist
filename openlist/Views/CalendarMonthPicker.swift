@@ -9,7 +9,6 @@ struct CalendarMonthPicker: View {
     let earliest: Date?
     let onSelect: (Date) -> Void
 
-    @Environment(\.nextStyle) private var style
     @State private var displayedMonth: Date
     @State private var hoveredDay: Date?
     @FocusState private var focusedDay: Date?
@@ -80,18 +79,19 @@ struct CalendarMonthPicker: View {
         let isTooEarly = CalendarMonthGrid.isBefore(day, earliest: earliest, calendar: calendar)
         let isHovered = hoveredDay == day && !isTooEarly
         return Button { onSelect(day) } label: {
-            // The design's calendar day number: 500 weight, tabular, the accent for today.
+            // The design's calendar day number: 500 weight, tabular. The
+            // chosen day is solid ink, today a grey fill: no hue in either.
             Text("\(calendar.component(.day, from: day))")
                 .font(.system(size: 13.5, weight: isSelected ? .semibold : .medium))
                 .monospacedDigit()
-                .foregroundStyle(isSelected ? Color.white : isTooEarly ? NX.ink(0.2) : isToday ? style.accent
+                .foregroundStyle(isSelected ? NX.onPrimary : isTooEarly ? NX.ink(0.2) : isToday ? NX.ink
                                  : isInMonth ? NX.ink : NX.textQuaternary)
                 .frame(maxWidth: .infinity)
                 .frame(height: 32)
                 .background {
                     RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(isSelected ? style.accent
-                              : isToday ? style.accent.opacity(isHovered ? 0.16 : 0.1)
+                        .fill(isSelected ? NX.primaryButton
+                              : isToday ? NX.ink(isHovered ? 0.12 : 0.07)
                               : isHovered ? NX.ink(0.06) : Color.clear)
                 }
                 .contentShape(Rectangle())

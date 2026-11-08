@@ -47,7 +47,7 @@ struct NextInboxScreen: View {
         // Only the rows below are focus targets: the triage card's keys work while nothing is focused.
         let rowIDs = NXGroupsStack.rowIDs(groups, workbench: workbench)
         return NXPage(rowIDs: rowIDs) {
-            NXScreenHeader(tile: .icon("tray.fill"), color: NX.inbox, title: "Inbox",
+            NXScreenHeader(tile: .icon("tray.fill"), title: "Inbox",
                            subtitle: Self.subtitle(queue: queue, kept: kept, snoozed: snoozed.count, workbench: workbench)) {
                 if let inbox = library.inbox {
                     Button { env.navigator.setListViewMode(.document, for: inbox.id) } label: {
@@ -97,7 +97,7 @@ struct NextInboxDocumentScreen: View {
                                                     showsCompleted: inbox.showsCompleted(default: env.settings.showsCompletedTasks),
                                                     inDocument: Set(documentRowIDs))
         NXPage(rowIDs: documentRowIDs + NXGroupsStack.rowIDs(groups, workbench: workbench)) {
-            NXScreenHeader(tile: .icon("tray.fill"), color: NX.inbox, title: "Inbox",
+            NXScreenHeader(tile: .icon("tray.fill"), title: "Inbox",
                            subtitle: NextInboxScreen.subtitle(queue: library.inboxQueue(workbench),
                                                               kept: library.keptInbox(workbench),
                                                               snoozed: library.snoozedInbox().count, workbench: workbench)) {
@@ -442,7 +442,7 @@ private struct NXTriageCard: View {
             }
             .buttonStyle(NXHoverButtonStyle(hover: NX.primaryButtonHover, rest: NX.primaryButton, radius: 8,
                                             padding: EdgeInsets(top: 8, leading: 12, bottom: 8, trailing: 12),
-                                            foreground: .white, hoverForeground: .white))
+                                            foreground: NX.onPrimary, hoverForeground: NX.onPrimary))
             .help("Keep for later (→)")
             .accessibilityLabel("Keep for later")
         }
@@ -482,7 +482,6 @@ private struct NXTriageCard: View {
 }
 
 private struct NXTriageListRow: View {
-    @Environment(\.nextStyle) private var style
     let key: String
     let list: TaskList
     let count: Int
@@ -510,7 +509,7 @@ private struct NXTriageListRow: View {
             if suggested {
                 Image(systemName: "sparkle")
                     .font(.system(size: 9.5, weight: .semibold))
-                    .foregroundStyle(style.accent)
+                    .foregroundStyle(NX.ink(0.5))
                     .help("Suggested from the task's words: 0 files into it")
             }
             // The design's `flex: 1`, so the name can come within two gaps of the count.
@@ -519,7 +518,7 @@ private struct NXTriageListRow: View {
         }
         .padding(.vertical, 7)
         .padding(.horizontal, 9)
-        .background(hovering ? NX.ink(0.05) : suggested ? style.accent.opacity(0.06) : .clear,
+        .background(hovering ? NX.hoverFill : suggested ? NX.ink(0.035) : .clear,
                     in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
@@ -566,7 +565,6 @@ private struct NXTriageMoreRow: View {
 }
 
 private struct NXTriageDay: View {
-    @Environment(\.nextStyle) private var style
     let offset: Int
     let load: Int
     let now: Date
@@ -586,12 +584,12 @@ private struct NXTriageDay: View {
                     .font(.system(size: 9.5, weight: .semibold))
                     .kerning(0.38)
                     .textCase(.uppercase)
-                    .foregroundStyle(picked ? style.accent : NX.textTertiary)
+                    .foregroundStyle(picked ? NX.ink : NX.textTertiary)
                     .padding(.vertical, (9.5 - NX.lineHeight(9.5)) / 2)
                 Text("\(Calendar.current.component(.day, from: date))")
                     .font(.system(size: 16, weight: .medium))
                     .monospacedDigit()
-                    .foregroundStyle(picked ? style.accent : NX.ink)
+                    .foregroundStyle(NX.ink)
                     .padding(.vertical, (16 - NX.lineHeight(16)) / 2)
                 HStack(spacing: 2) {
                     ForEach(0..<min(load, 4), id: \.self) { _ in
@@ -603,10 +601,10 @@ private struct NXTriageDay: View {
             .frame(maxWidth: .infinity)
             .padding(.top, 8)
             .padding(.bottom, 7)
-            .background(picked ? style.accent.opacity(0.12) : hovering ? NX.ink(0.05) : NX.ink(0.035),
+            .background(picked ? NX.selectedFill : hovering ? NX.hoverFill : NX.ink(0.035),
                         in: RoundedRectangle(cornerRadius: 9, style: .continuous))
             .overlay {
-                if picked { RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(style.accent, lineWidth: 1) }
+                if picked { RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(NX.ink(0.5), lineWidth: 1) }
             }
             .contentShape(Rectangle())
         }

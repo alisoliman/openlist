@@ -100,7 +100,7 @@ struct TemplateCopySheet: View {
         .padding(24)
         .frame(width: 430)
         .presentationBackground(NX.card)
-        .tint(env.workbench.style.accent)
+        .tint(env.workbench.style.controlTint)
         // Presented from the window, outside the Next shell's style.
         .environment(\.nextStyle, env.workbench.style)
     }

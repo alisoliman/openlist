@@ -272,7 +272,7 @@ struct NXConfirmationSheet: View {
         .padding(24)
         .frame(width: 430)
         .presentationBackground(NX.card)
-        .tint(style.accent)
+        .tint(style.controlTint)
         // Presented from the window, outside the Next shell's style.
         .environment(\.nextStyle, style)
     }
@@ -339,7 +339,7 @@ private struct LibraryRestorePreview: View {
         .padding(24)
         .frame(width: 490)
         .presentationBackground(NX.card)
-        .tint(style.accent)
+        .tint(style.controlTint)
         // Presented from the window, outside the Next shell's style.
         .environment(\.nextStyle, style)
         .interactiveDismissDisabled(library.isBusy)

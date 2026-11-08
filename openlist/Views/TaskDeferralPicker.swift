@@ -47,6 +47,6 @@ struct TaskDeferralPicker: View {
         .padding(16)
         .frame(width: 320)
         .presentationBackground(NX.card)
-        .tint(style.accent)
+        .tint(style.controlTint)
     }
 }

@@ -168,12 +168,13 @@ struct BlockTextView: NSViewRepresentable {
         context.coordinator.syncFocus(view: view, shouldFocus: isFocused, caret: pendingCaret, token: focusToken)
     }
 
-    /// Draws the caret and links in the accent. NSTextView draws a link with
+    /// Draws the caret and links in the accent, underlined, so a link in the
+    /// Neutral ink still reads as one. NSTextView draws a link with
     /// `linkTextAttributes`, over the storage's ink. Each is set only when its
     /// colour changes, so an update doesn't disturb the caret or the IME.
     func applyAccent(to view: BlockNSTextView) {
         if let accentColor, view.insertionPointColor !== accentColor { view.insertionPointColor = accentColor }
-        let link = accentColor ?? NXEditor.accentViolet
+        let link = accentColor ?? NXEditor.ink
         guard view.linkTextAttributes?[.foregroundColor] as? NSColor !== link else { return }
         view.linkTextAttributes = [
             .foregroundColor: link,

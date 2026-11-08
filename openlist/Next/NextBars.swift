@@ -106,7 +106,7 @@ struct NXTray: View {
 
     var body: some View {
         let workbench = env.workbench
-        let tint = Self.tint(message.tone, accent: style.accent)
+        let tint = Self.tint(message.tone)
         HStack(spacing: 10) {
             // The design's 15pt icon line sets a plain message's height; only
             // Undo or a destination's pill makes the tray taller.
@@ -144,7 +144,7 @@ struct NXTray: View {
             // Held under the pointer, the countdown stops; it starts over,
             // full, as the pointer leaves.
             if !workbench.trayHeld {
-                NXTrayDrain(color: Self.drain(message.tone, accent: style.accent), dwell: style.dwell)
+                NXTrayDrain(color: Self.drain(message.tone, style: style), dwell: style.dwell)
                     .id(message.id)
             }
         }
@@ -167,25 +167,28 @@ struct NXTray: View {
         return EdgeInsets(top: vertical, leading: 9, bottom: vertical, trailing: 9)
     }()
 
-    /// The drain takes the saturated tone, not the icon's pastel; the
-    /// neutral one is the design's dark ink, barely there on the tray.
-    static func drain(_ tone: TrayTone, accent: Color) -> Color {
+    /// The drain takes the saturated tone, not the icon's pastel. An accent
+    /// message's drain is progress, so a hue shows there; Neutral's is a
+    /// light line on the tray, the neutral one the design's dark ink, barely
+    /// there.
+    static func drain(_ tone: TrayTone, style: NextStyle) -> Color {
         switch tone {
         case .green: Color(hex: 0x2F9E6E)
         case .red: Color(hex: 0xC03A42)
         case .amber: Color(hex: 0xA87A06)
-        case .accent: accent
+        case .accent: style.accentChoice == .neutral ? Color.white.opacity(0.45) : style.accent
         case .neutral: Color(hex: 0x17161A, opacity: 0.6)
         }
     }
 
-    static func tint(_ tone: TrayTone, accent: Color) -> Color {
+    /// The icon's colour: status keeps its pastel hue, and everything else,
+    /// an accent message's too, is the tray's soft white.
+    static func tint(_ tone: TrayTone) -> Color {
         switch tone {
         case .green: Color(hex: 0x6FD3A4)
         case .red: Color(hex: 0xFF8A8A)
         case .amber: Color(hex: 0xF2C14E)
-        case .accent: accent
-        case .neutral: Color.white.opacity(0.7)
+        case .accent, .neutral: Color.white.opacity(0.7)
         }
     }
 }

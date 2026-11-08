@@ -142,7 +142,7 @@ coordinator.replan(now: date(23, 9, 55))
 let plain = WidgetSnapshotPublisher(store: store)
 let bare = plain.buildSnapshot(now: now)
 check(bare.work == nil && bare.agenda.isEmpty && bare.libraryID == nil, "empty sources publish no calendar, work or library")
-check(bare.accentHex == 0x7C4DF0 && bare.serifTitles, "empty sources publish the app's default appearance")
+check(bare.accentHex == NextAccent.neutral.hex && bare.serifTitles, "empty sources publish the app's default appearance")
 
 let publisher = WidgetSnapshotPublisher(store: store,
     sources: .live(calendar: coordinator, settings: settings, libraryID: libraryID))
@@ -151,7 +151,7 @@ let snapshot = publisher.buildSnapshot(now: now)
 check(snapshot.version == WidgetSnapshot.currentVersion, "the snapshot declares the current schema")
 check(snapshot.libraryID == libraryID, "the library ID is published for item links")
 check(snapshot.accentHex == 0x1F8A6D && !snapshot.serifTitles, "appearance follows the app's settings")
-check(NextAccent.allCases.map(\.hex) == [0x7C4DF0, 0x2F6FE0, 0x1F8A6D, 0xC2532B] && snapshot.accentHex == settings.accent.hex,
+check(NextAccent.allCases.map(\.hex) == [0x17161A, 0x7C4DF0, 0x2F6FE0, 0x1F8A6D, 0xC2532B] && snapshot.accentHex == settings.accent.hex,
       "the published accent is the app's own, from the one definition its colour is built from")
 check(snapshot.firstWeekday == 2, "the settings' first weekday is published")
 

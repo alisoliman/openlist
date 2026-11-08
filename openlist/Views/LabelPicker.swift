@@ -10,7 +10,6 @@ struct LabelPicker: View {
     let block: Block
 
     @Environment(AppEnvironment.self) private var env
-    @Environment(\.nextStyle) private var style
     @State private var query = ""
     /// The row Return picks: a match's index, or the Create row after them.
     @State private var highlight: Int?
@@ -83,7 +82,7 @@ struct LabelPicker: View {
                             .font(.system(size: 13, weight: .medium))
                             .lineLimit(1)
                     }
-                    .foregroundStyle(style.accent)
+                    .foregroundStyle(NX.ink)
                 }
                 .buttonStyle(NXPanelRowStyle(isOn: false, isHighlighted: highlight == index))
                 .onHover { if $0 { highlight = index } }

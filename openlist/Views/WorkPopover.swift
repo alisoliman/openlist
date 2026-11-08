@@ -104,7 +104,7 @@ struct WorkPopover: View {
         .frame(width: 340)
         .fixedSize(horizontal: false, vertical: true)
         .presentationBackground(NX.card)
-        .tint(style.accent)
+        .tint(style.controlTint)
         .onChange(of: env.calendar.workSelection) { _, _ in movingBlock = nil }
     }
 
@@ -115,7 +115,7 @@ struct WorkPopover: View {
     private func openCalendar() { close(); env.workbench.showOnCalendar() }
 }
 
-/// A quiet text action in the accent, for the Work panel's secondary
+/// A quiet text action in the accent's words, for the Work panel's secondary
 /// choices: the panels' link button, its text lined up with the copy above.
 struct NXWorkLink: View {
     let title: String

@@ -26,9 +26,9 @@ struct ListAppearancePicker: View {
                     Button { env.workbench.setAppearance(icon: symbol, for: list) } label: {
                         Self.cell(symbol)
                     }
-                    // Chosen, the accent's faint fill, as the design's menus mark their pick.
-                    .buttonStyle(NXHoverButtonStyle(hover: isOn ? style.accent.opacity(0.22) : NX.ink(0.06),
-                                                    rest: isOn ? style.accent.opacity(0.15) : .clear, radius: 7,
+                    // Chosen, a darker grey, as chips mark what's on.
+                    .buttonStyle(NXHoverButtonStyle(hover: isOn ? NX.ink(0.16) : NX.hoverFill,
+                                                    rest: isOn ? NX.chosenFill : .clear, radius: 7,
                                                     padding: EdgeInsets()))
                     .accessibilityAddTraits(isOn ? .isSelected : [])
                 }
@@ -37,7 +37,7 @@ struct ListAppearancePicker: View {
                 // An emoji of the list's own, marked as a suggestion would be.
                 if !ListIcon.suggestions.contains(glyph), !ListIcon.isSymbolName(glyph) {
                     Self.cell(glyph)
-                        .background(style.accent.opacity(0.15), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                        .background(NX.chosenFill, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                         .accessibilityAddTraits(.isSelected)
                 }
                 NXEmojiField { env.workbench.setAppearance(icon: $0, for: list) }
@@ -66,7 +66,7 @@ struct ListAppearancePicker: View {
         // The ten emoji columns' width, which the field below them shares.
         .frame(width: 364)
         .presentationBackground(NX.card)
-        .tint(style.accent)
+        .tint(style.controlTint)
         // Presented from the list's header, outside the Next shell's style.
         .environment(\.nextStyle, style)
     }
@@ -120,7 +120,7 @@ private struct NXEmojiField: View {
         // NXPanelField's look, whose focus this field needs for the button.
         .background(NX.ink(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
-            .strokeBorder(focused ? style.accent.opacity(0.6) : NX.ink(0.08), lineWidth: focused ? 1 : 0.5))
+            .strokeBorder(focused ? style.focusRing : NX.ink(0.08), lineWidth: focused ? 1 : 0.5))
         .animation(.easeOut(duration: 0.12), value: focused)
     }
 }

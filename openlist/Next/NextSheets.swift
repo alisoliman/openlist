@@ -53,7 +53,7 @@ struct NXLinkSheet: View {
         .padding(24)
         .frame(width: 430)
         .presentationBackground(NX.card)
-        .tint(style.accent)
+        .tint(style.controlTint)
         // Presented from the window, outside the Next shell's style.
         .environment(\.nextStyle, style)
     }

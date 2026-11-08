@@ -43,7 +43,7 @@ struct NextShell: View {
         }
         .environment(\.nextLibrary, library)
         .environment(\.nextStyle, style)
-        .tint(style.accent)
+        .tint(style.controlTint)
         .background(NX.paper)
         .background { NextKeyMonitorHost(library: library, overlays: overlays) }
         .background { NXWindowChromeHost(chrome: chrome) }

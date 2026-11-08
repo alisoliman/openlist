@@ -880,4 +880,20 @@ do {
           "Day and month names come from the calendar's locale")
 }
 
+// The interface went monochrome: a stored hue moves to Neutral once, and a
+// hue chosen after that stays.
+do {
+    let suite = "SharedLogicChecks-accent-\(UUID().uuidString)"
+    let defaults = UserDefaults(suiteName: suite)!
+    defer { defaults.removePersistentDomain(forName: suite) }
+    check(AppSettings(defaults: defaults).accent == .neutral, "A new install starts on the Neutral accent")
+    defaults.removeObject(forKey: "settings.accentMovedToNeutral")
+    defaults.set("violet", forKey: "settings.accent")
+    let moved = AppSettings(defaults: defaults)
+    check(moved.accent == .neutral && defaults.string(forKey: "settings.accent") == "neutral",
+          "A device on violet moves to Neutral once")
+    moved.accent = .blue
+    check(AppSettings(defaults: defaults).accent == .blue, "An accent chosen after the move stays")
+}
+
 print("Passed \(checks) shared logic checks")

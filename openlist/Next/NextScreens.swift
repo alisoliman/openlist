@@ -61,7 +61,7 @@ private struct NXTodayPage: View {
             let model = Self.model(outline: outline, workbench: workbench, showsCompleted: env.settings.showsCompletedTasks,
                                    now: now) { !workbench.placedTaskIDs().contains($0) }
             NXPage(rowIDs: NXGroupsStack.rowIDs(model.groups, workbench: workbench)) {
-                NXScreenHeader(tile: .icon("sun.max.fill"), color: NX.today, title: "Today",
+                NXScreenHeader(tile: .icon("sun.max.fill"), title: "Today",
                                subtitle: now.formatted(.dateTime.weekday(.wide).day().month(.wide)),
                                progress: model.progress)
                 if model.clear {
@@ -135,7 +135,7 @@ private struct NXTodayPage: View {
 
     private func todayClear(done: Int) -> some View {
         HStack(spacing: 18) {
-            Image(systemName: "sun.max.fill").font(.system(size: 34)).foregroundStyle(NX.today)
+            Image(systemName: "sun.max.fill").font(.system(size: 34)).foregroundStyle(NX.ink(0.3))
             VStack(alignment: .leading, spacing: 4) {
                 Text("Today is clear").font(NX.serif(26)).padding(.vertical, NX.serifLeading(26, lineHeight: 1.1)).foregroundStyle(NX.ink)
                 // The design's 13/1.45: the extra leading between lines and,
@@ -223,7 +223,7 @@ struct NextListScreen: View {
             if let parent = library.hierarchy.parent(of: list.id) {
                 NXParentListLink(parent: parent)
             }
-            NXScreenHeader(tile: .list(list), color: list.nxColor, title: list.displayTitle,
+            NXScreenHeader(tile: .list(list), title: list.displayTitle,
                            subtitle: "\(open.count) open" + (section.isEmpty ? "" : " · \(section)")
                                + (archived ? " · Archived" : ""),
                            progress: (tasks.filter(\.isCompleted).count, tasks.count),
@@ -509,7 +509,7 @@ private struct NXListDescription: View {
                     // Where a search hit landed, in the design's fresh tint, as a revealed line has it.
                     if revealsSummary, litRevealID != nil, litRevealID == env.navigator.contentReveal?.id {
                         RoundedRectangle(cornerRadius: 7, style: .continuous)
-                            .fill(style.accent.opacity(0.11))
+                            .fill(NX.highlightFill)
                             .padding(-5)
                             .transition(.opacity)
                     }

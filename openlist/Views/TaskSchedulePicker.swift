@@ -82,7 +82,7 @@ struct TaskSchedulePicker: View {
         .padding(16)
         .frame(width: 350)
         .presentationBackground(NX.card)
-        .tint(style.accent)
+        .tint(style.controlTint)
         .environment(\.calendar, env.settings.calendar)
         .onPreferenceChange(NXPendingCustomValueKey.self) { typedValue = $0 }
         // A click away keeps what was staged, as Done does, with no Cancel

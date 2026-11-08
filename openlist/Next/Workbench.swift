@@ -419,7 +419,7 @@ final class Workbench {
     var style: NextStyle {
         let reduced = settings.reducesMotion || NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         return NextStyle(
-            accent: settings.accent.color,
+            accentChoice: settings.accent,
             motion: reduced ? 0.4 : settings.motion.scale,
             lively: !reduced && settings.motion != .restrained,
             slides: !reduced,

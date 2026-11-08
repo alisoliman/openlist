@@ -83,7 +83,7 @@ do {
     check(old.overdueCount == 2 && old.dueTodayCount == 3 && old.completedTodayCount == 1 && old.inboxCount == 4 && old.totalOpenCount == 9,
           "a version 1 file keeps its counters")
     check(old.todayItems.isEmpty && old.lists.isEmpty, "rows in the old shape fall back to empty instead of failing the file")
-    check(old.agenda.isEmpty && old.work == nil && old.accentHex == 0x7C4DF0 && old.serifTitles, "fields a version 1 file lacks take their defaults")
+    check(old.agenda.isEmpty && old.work == nil && old.accentHex == WidgetSnapshot.neutralAccentHex && old.serifTitles, "fields a version 1 file lacks take their defaults")
     check((try? WidgetSnapshotStore.decode(Data("not json".utf8))) == nil, "a corrupt file is rejected")
 
     var later = sample
@@ -574,7 +574,11 @@ do {
     check(WidgetFormat.weekRange(from: at(0, day: -2), calendar: calendar) == "21 – 27 September", "a week inside one month")
     check(WidgetFormat.weekRange(from: at(0, day: 5), calendar: calendar) == "28 September – 4 October", "a week across a month end")
     check(WidgetFormat.count(1, "meeting") == "1 meeting" && WidgetFormat.count(4, "meeting") == "4 meetings", "counted nouns")
-    check(WidgetStyle.darkAccent(0x7C4DF0) == 0x9B78FF, "the default accent lifts to the design's dark value")
+    check(WidgetStyle.darkAccent(0x7C4DF0) == 0x9B78FF, "violet lifts to the design's dark value")
+    let neutralDark = WidgetStyle(mode: .dark, accentHex: WidgetSnapshot.neutralAccentHex)
+    check(neutralDark.acc == neutralDark.ink && neutralDark.onAcc == neutralDark.bg
+          && WidgetStyle.light.acc == WidgetStyle.light.ink && WidgetStyle.light.onAcc == WidgetStyle.light.bg,
+          "the Neutral accent is each appearance's ink, with the background's colour on it")
     var ring = item("k2")
     ring.priority = 2
     check(WidgetStyle.light.checkColor(for: ring, isLate: false) == WidgetStyle.light.amber, "medium priority rings are amber, as in the app's rows")

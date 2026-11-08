@@ -91,10 +91,12 @@ struct NextToolbar: View {
                         }
                     }
                 }
-                // Darkens under the pointer, as the page's other filled accent buttons do.
-                .buttonStyle(NXHoverButtonStyle(hover: style.accentHover, rest: style.accent, radius: 8,
+                // Grey, as the page's secondary buttons: it's there on every
+                // screen, so a filled accent would compete with each one's own
+                // primary action. It deepens under the pointer.
+                .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.1), rest: NX.ink(0.06), radius: 8,
                                                 padding: EdgeInsets(top: 5, leading: 10, bottom: 5, trailing: 10),
-                                                foreground: .white))
+                                                foreground: NX.ink))
                 .fixedSize()
                 .help("New task (N)")
                 .accessibilityLabel("New task")

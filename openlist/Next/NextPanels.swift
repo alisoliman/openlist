@@ -9,9 +9,10 @@ import SwiftUI
 // MARK: - Buttons
 
 /// Buttons for popovers, sheets and notices. `primary` is the design's accent
-/// "Start working" button, `secondary` its grey "Review kept tasks" one, whose
-/// hover deepens only the fill, and `destructive` Trash's red. `link` is a
-/// quiet action in the accent and `quiet` a grey one that darkens on hover,
+/// "Start working" button, solid ink while the accent is Neutral, `secondary`
+/// its grey "Review kept tasks" one, whose hover deepens only the fill, and
+/// `destructive` Trash's red. `link` is a quiet action in the accent's words
+/// on a grey hover, and `quiet` a grey one that darkens on hover,
 /// like the Tasks query's clear ×. Hover swaps the fill at once, with no
 /// pressed dim, as the design's style-hover; unlike `NXHoverButtonStyle`, a
 /// disabled button dims.
@@ -72,7 +73,7 @@ struct NXPanelButtonStyle: ButtonStyle {
 
         private func foreground(_ hot: Bool) -> Color {
             switch kind {
-            case .primary: .white
+            case .primary: style.onAccent
             case .secondary: NX.textSecondary
             case .destructive: NX.redText
             case .link: style.accent
@@ -85,7 +86,7 @@ struct NXPanelButtonStyle: ButtonStyle {
             case .primary: hot ? style.accentHover : style.accent
             case .secondary: NX.ink(hot ? 0.1 : 0.06)
             case .destructive: NX.red.opacity(hot ? 0.16 : 0.1)
-            case .link: hot ? style.accent.opacity(0.1) : .clear
+            case .link: hot ? NX.hoverFill : .clear
             case .quiet: hot ? NX.ink(0.06) : .clear
             }
         }
@@ -123,8 +124,8 @@ struct NXDisclosureButton: View {
 }
 
 /// A row in the design's small menus, like the Tasks sentence menus and the
-/// label picker: 8/9 padding on a 7pt radius, the accent's faint fill and a
-/// check when chosen, grey on hover. It is a real button, so the keyboard and
+/// label picker: 8/9 padding on a 7pt radius, an ink check when chosen, grey
+/// on hover. It is a real button, so the keyboard and
 /// VoiceOver can choose it.
 struct NXPanelRowStyle: ButtonStyle {
     var isOn: Bool
@@ -144,7 +145,6 @@ struct NXPanelRowStyle: ButtonStyle {
     }
 
     private struct PanelRow: View {
-        @Environment(\.nextStyle) private var style
         let configuration: Configuration
         let isOn: Bool
         let isHighlighted: Bool?
@@ -158,7 +158,7 @@ struct NXPanelRowStyle: ButtonStyle {
                 // row's fill changes at once.
                 Image(systemName: "checkmark")
                     .font(.system(size: 11.5, weight: .bold))
-                    .foregroundStyle(style.accent)
+                    .foregroundStyle(NX.ink)
                     .animation(NX.cssEase(120)) { $0.opacity(isOn ? 1 : 0) }
                     .accessibilityHidden(true)
             }
@@ -166,7 +166,7 @@ struct NXPanelRowStyle: ButtonStyle {
             .padding(.vertical, 8)
             .padding(.horizontal, 9)
             .background(NXPanelRowStyle.greys(highlighted: isHighlighted, hovering: hovering, pressed: configuration.isPressed)
-                            ? NX.ink(0.05) : isOn ? style.accent.opacity(0.06) : .clear,
+                            ? NX.hoverFill : .clear,
                         in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             .contentShape(Rectangle())
             .onHover { hovering = $0 }
@@ -197,7 +197,7 @@ struct NXPanelTitle: View {
 
 /// A text field on a faint fill, with an optional leading symbol, like the
 /// Tasks screen's title filter. The plain field has no focus ring, so the
-/// border turns to the accent while it has focus.
+/// border darkens to the focus ring while it has focus.
 struct NXPanelField<Field: View>: View {
     @Environment(\.nextStyle) private var style
     var icon: String?
@@ -222,7 +222,7 @@ struct NXPanelField<Field: View>: View {
         .padding(.horizontal, 9)
         .background(NX.ink(0.04), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous)
-            .strokeBorder(focused ? style.accent.opacity(0.6) : NX.ink(0.08), lineWidth: focused ? 1 : 0.5))
+            .strokeBorder(focused ? style.focusRing : NX.ink(0.08), lineWidth: focused ? 1 : 0.5))
         .animation(.easeOut(duration: 0.12), value: focused)
     }
 }

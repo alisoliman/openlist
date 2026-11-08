@@ -53,14 +53,17 @@ struct LabelMergeSheet: View {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Replace “\(plan.source.name)” with the existing label below.")
                         .foregroundStyle(NX.textSecondary)
-                    // The inspector's chosen label pill.
+                    // A label chip as rows show it: its colour as a dot.
                     HStack(spacing: 8) {
-                        Text("#\(plan.destination.name)")
-                            .font(.system(size: 11, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .padding(.vertical, 5)
-                            .padding(.horizontal, 8)
-                            .background(plan.destination.accent.color, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                        HStack(spacing: 5) {
+                            Circle().fill(plan.destination.accent.color).frame(width: 6, height: 6)
+                            Text("#\(plan.destination.name)")
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(NX.textSecondary)
+                        }
+                        .padding(.vertical, 5)
+                        .padding(.horizontal, 8)
+                        .background(NX.ink(0.05), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                         Text(plan.destination.accent.title)
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(NX.textTertiary)
@@ -91,7 +94,7 @@ struct LabelMergeSheet: View {
         .frame(width: 460)
         .fixedSize(horizontal: false, vertical: true)
         .presentationBackground(NX.card)
-        .tint(style.accent)
+        .tint(style.controlTint)
         // A sheet over the Settings page, outside the Next shell's style.
         .environment(\.nextStyle, style)
         .onAppear {

@@ -287,8 +287,8 @@ struct NextInspector: View {
         .overlay {
             if dropTargeted {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(style.accent.opacity(0.5), lineWidth: 1)
-                    .background(style.accent.opacity(0.05), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .strokeBorder(NX.dropRing, lineWidth: 1)
+                    .background(NX.ink(0.03), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                     .padding(6)
                     .allowsHitTesting(false)
             }
@@ -875,7 +875,7 @@ struct NextInspector: View {
                 Image(systemName: working ? "timer" : "play.fill").font(.system(size: 12, weight: .medium))
                 Text(working ? "Working…" : "Start working").font(.system(size: 12, weight: .semibold))
             }
-            .foregroundStyle(working ? NX.textTertiary : .white)
+            .foregroundStyle(working ? NX.textTertiary : style.onAccent)
             .padding(.vertical, 8)
             .padding(.horizontal, 12)
             .background(working ? NX.ink(0.06) : style.accent, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
@@ -889,8 +889,8 @@ struct NextInspector: View {
     }
 }
 
-/// The inspector's small toggle pills: a faint accent tint when on, faint
-/// grey when off. As the design's, they have no hover; only choosing one
+/// The inspector's small toggle pills: a darker grey and ink words when on,
+/// faint grey when off. As the design's, they have no hover; only choosing one
 /// changes its fill.
 struct NXInspectorPill<Label: View>: View {
     @Environment(\.nextStyle) private var style
@@ -911,7 +911,7 @@ struct NXInspectorPill<Label: View>: View {
                 .lineLimit(1)
                 .frame(height: line)
                 .padding(padding)
-                .modifier(NXInspectorPillFade(isOn: isOn, on: (style.accent, style.accent.opacity(0.12)),
+                .modifier(NXInspectorPillFade(isOn: isOn, on: (NX.ink, NX.chosenFill),
                                               off: (NX.textSecondary, NX.ink(0.05))))
                 .contentShape(Rectangle())
         }

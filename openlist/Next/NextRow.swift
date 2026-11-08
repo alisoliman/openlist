@@ -182,7 +182,9 @@ struct NXTaskRowChrome<Title: View, Buttons: View>: View {
             let shape = RoundedRectangle(cornerRadius: 9, style: .continuous)
             let card = focused && !editing
             let fill = editing ? NX.ink(0.035) : background(focused: focused, selected: selected, fresh: fresh, restored: restored)
-            let ring = card ? style.accent.opacity(0.25) : selected && !editing ? style.accent.opacity(0.19) : Color.clear
+            // Grey whatever the accent: a focused row is a card with a quiet
+            // ring, a selected one only a fill.
+            let ring = card ? NX.selectedRing : Color.clear
             // As the design: the fill eases over 700ms, the focus shadow and ring
             // over 180ms, all on CSS ease. Each animation covers only its colour
             // or opacity, so a row that resizes in the same update never drags
@@ -229,9 +231,8 @@ struct NXTaskRowChrome<Title: View, Buttons: View>: View {
 
     private func background(focused: Bool, selected: Bool, fresh: Bool, restored: Bool) -> Color {
         if focused { return NX.card }
-        if selected { return style.accent.opacity(0.08) }
-        if fresh { return style.accent.opacity(0.11) }
-        if restored { return style.accent.opacity(0.07) }
+        if selected { return NX.selectedFill }
+        if fresh || restored { return NX.highlightFill }
         return .clear
     }
 }
@@ -303,7 +304,8 @@ private struct NXRowShadow: View {
     }
 }
 
-/// The accent check a selected row shows, with the design's chipIn entrance.
+/// The ink check a selected row shows, with the design's chipIn entrance.
+/// Selection stays grey whatever the accent, so it never reads as status.
 struct NXSelectionMark: View {
     @Environment(\.nextStyle) private var style
     @State private var shown = false
@@ -312,9 +314,9 @@ struct NXSelectionMark: View {
         // With Reduce Motion it only fades, as the chips do.
         let risen = shown || !style.slides
         RoundedRectangle(cornerRadius: 5, style: .continuous)
-            .fill(style.accent)
+            .fill(NX.ink)
             .frame(width: 16, height: 16)
-            .overlay(Image(systemName: "checkmark").font(.system(size: 9, weight: .bold)).foregroundStyle(.white))
+            .overlay(Image(systemName: "checkmark").font(.system(size: 9, weight: .bold)).foregroundStyle(NX.paper))
             .scaleEffect(risen ? 1 : 0.85)
             .offset(y: risen ? 0 : 3)
             .opacity(shown ? 1 : 0)
@@ -422,9 +424,10 @@ struct NXCheckbox: View {
                 // The design's row tick: a 140ms fade and a 200ms spring, at
                 // those speeds whatever the Motion setting. Its inspector
                 // ticks show and go at once.
+                // On the accent while it settles, then on done's green.
                 Image(systemName: "checkmark")
                     .font(.system(size: size * 0.6, weight: .heavy))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(closing != nil ? style.onAccent : .white)
                     .animation(pops ? NX.cssEase(140) : nil) { $0.opacity(filled ? 1 : 0) }
                     .animation(pops ? style.bounce(200) : nil) { $0.scaleEffect(filled || !pops ? 1 : 0.3) }
                     .accessibilityHidden(true)

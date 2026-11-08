@@ -7,7 +7,10 @@ import SwiftUI
 
 // MARK: - Chips
 
-/// The tint families a chip can use.
+/// The tint families a chip can use. Chips stay grey whatever the accent:
+/// `accent` is the stronger grey of a chip that matters now, like a date
+/// due today, and a label wears its colour only as a dot. Red, green and
+/// amber keep their hues, as they mean overdue, done and priority.
 enum NXTone: Equatable {
     case neutral, accent, over, green, amber
     case label(Color)
@@ -73,6 +76,9 @@ struct NXChip: View {
         // A chip that is only a symbol, like the star, needs no box to read.
         let bare = chip.label.isEmpty && chip.glyph == nil
         HStack(spacing: quiet ? 3 : 4) {
+            if case let .label(color) = chip.tone {
+                Circle().fill(color).frame(width: 6, height: 6).accessibilityHidden(true)
+            }
             if let icon = chip.icon {
                 Image(systemName: icon).font(.system(size: 9.5, weight: chip.fill ? .bold : .semibold))
             }
@@ -84,7 +90,7 @@ struct NXChip: View {
                         Text("\(NXListGlyph.text(list, size: size)) \(chip.label)")
                             .accessibilityLabel(chip.label)
                     } else {
-                        Text(quiet && isLabel ? "#" + chip.label : chip.label)
+                        Text(chip.label)
                     }
                 }
                 .font(.system(size: size, weight: quiet ? .medium : .semibold))
@@ -108,11 +114,9 @@ struct NXChip: View {
         .onChange(of: fresh, initial: true) { _, isFresh in if isFresh, !quiet { pop() } }
     }
 
-    private var isLabel: Bool { if case .label = chip.tone { true } else { false } }
-
     private func quietColor(_ fg: Color) -> Color {
         switch chip.tone {
-        case .over, .accent, .amber, .label: fg
+        case .over, .accent, .amber: fg
         default: NX.textTertiary
         }
     }
@@ -127,12 +131,11 @@ struct NXChip: View {
 
     private var colors: (Color, Color) {
         switch chip.tone {
-        case .neutral: (NX.textTertiary, NX.ink(0.05))
-        case .accent: (style.accent, style.accent.opacity(0.12))
+        case .neutral, .label: (NX.textTertiary, NX.ink(0.05))
+        case .accent: (NX.textSecondary, NX.ink(0.05))
         case .over: (NX.redText, NX.red.opacity(0.13))
         case .green: (NX.greenText, NX.green.opacity(0.14))
         case .amber: (NX.amberText, NX.amber.opacity(0.18))
-        case let .label(color): (color, color.opacity(0.12))
         }
     }
 }
@@ -174,14 +177,15 @@ struct NXToggle: View {
 
 /// The switch itself, as the inspector draws it: the design's
 /// `background 180ms ease` on the track and 200ms spring on the knob, at
-/// those speeds whatever the Motion setting.
+/// those speeds whatever the Motion setting. On, it takes the native
+/// switches' tint, so the two kinds match.
 struct NXSwitch: View {
     @Environment(\.nextStyle) private var style
     let isOn: Bool
 
     var body: some View {
         Capsule()
-            .animation(NX.cssEase(180)) { $0.foregroundStyle(isOn ? style.accent : NX.ink(0.16)) }
+            .animation(NX.cssEase(180)) { $0.foregroundStyle(isOn ? style.controlTint : NX.ink(0.16)) }
             .frame(width: 34, height: 20)
             .overlay(alignment: .leading) {
                 Circle().fill(.white)
@@ -287,7 +291,9 @@ struct NXScreenHeader<Trailing: View>: View {
     @Environment(\.nextStyle) private var style
     enum Tile { case icon(String), list(TaskList) }
     let tile: Tile
-    let color: Color
+    /// An icon tile's symbol: grey, as screens have no colours of their
+    /// own; a label's screen gives its label's.
+    var color: Color = NX.ink(0.6)
     let title: String
     let subtitle: String
     var progress: (done: Int, total: Int)?
@@ -331,7 +337,7 @@ struct NXScreenHeader<Trailing: View>: View {
 
     private var tileView: some View {
         ZStack {
-            // A quiet tile: the symbol carries the screen's colour.
+            // A quiet tile: a grey symbol, or a list's own glyph.
             RoundedRectangle(cornerRadius: 12, style: .continuous).fill(NX.ink(0.05))
             switch tile {
             case let .icon(name):
@@ -504,7 +510,7 @@ private struct NXHeaderTitleField: View {
 }
 
 extension NXScreenHeader where Trailing == EmptyView {
-    init(tile: Tile, color: Color, title: String, subtitle: String, progress: (done: Int, total: Int)? = nil) {
+    init(tile: Tile, color: Color = NX.ink(0.6), title: String, subtitle: String, progress: (done: Int, total: Int)? = nil) {
         self.init(tile: tile, color: color, title: title, subtitle: subtitle, progress: progress) { EmptyView() }
     }
 }

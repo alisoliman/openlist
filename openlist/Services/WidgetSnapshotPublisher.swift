@@ -18,7 +18,7 @@ import WidgetKit
 struct WidgetSnapshotSources {
     var libraryID: UUID?
     /// The app's accent as 0xRRGGBB.
-    var accentHex: @MainActor () -> UInt32 = { 0x7C4DF0 }
+    var accentHex: @MainActor () -> UInt32 = { WidgetSnapshot.neutralAccentHex }
     var serifTitles: @MainActor () -> Bool = { true }
     /// The calendar the app uses for weeks, honouring its first-weekday setting.
     var calendar: @MainActor () -> Calendar = { .current }

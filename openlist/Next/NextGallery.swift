@@ -60,7 +60,7 @@ struct NextListsGallery: View {
         let shelves = shelves
         let lines = Dictionary(grouping: blocks) { $0.listID }
         NXPage(measure: nil) {
-            NXScreenHeader(tile: .icon("square.2.layers.3d.fill"), color: NX.lists, title: "Lists", subtitle: subtitle(shelves))
+            NXScreenHeader(tile: .icon("square.2.layers.3d.fill"), title: "Lists", subtitle: subtitle(shelves))
             VStack(alignment: .leading, spacing: 0) {
                 // With no list to use, archived ones aside, the first card makes one.
                 if library.destinations.isEmpty {
@@ -138,10 +138,10 @@ private struct NXListCard: View {
         let done = tasks.count - open.count
         let dueToday = open.filter(\.isDueOnOrBeforeToday).count
         let fraction = tasks.isEmpty ? 0 : Double(done) / Double(tasks.count)
-        let color = list.nxColor
         let stats = "\(open.count) open" + (dueToday > 0 ? " · \(dueToday) due today" : "") + (done > 0 ? " · \(done) done" : "")
         return VStack(alignment: .leading, spacing: 0) {
-            color.opacity(0.08)
+            // A grey band: the list's colour is its glyph's alone.
+            NX.ink(0.035)
                 .frame(height: 58)
                 .overlay(alignment: .bottomLeading) {
                     NXListGlyph(list: list, size: 30)
@@ -211,7 +211,6 @@ private struct NXListCard: View {
 /// The dashed card after a section's lists that makes another there. It
 /// takes the row's height beside real cards, and a card's own on a row by itself.
 private struct NXNewListCard: View {
-    @Environment(\.nextStyle) private var style
     let title: String
     let action: () -> Void
     @State private var hovering = false
@@ -222,8 +221,8 @@ private struct NXNewListCard: View {
                 Image(systemName: "plus")
                     .font(.system(size: 14, weight: .semibold))
                     .frame(width: 30, height: 30)
-                    .background(hovering ? style.accent.opacity(0.14) : NX.ink(0.05), in: Circle())
-                    .foregroundStyle(hovering ? style.accent : NX.ink(0.45))
+                    .background(hovering ? NX.ink(0.09) : NX.ink(0.05), in: Circle())
+                    .foregroundStyle(hovering ? NX.ink : NX.ink(0.45))
                 Text(title).font(.system(size: 12.5, weight: .medium))
             }
             .foregroundStyle(hovering ? NX.textSecondary : NX.textTertiary)
@@ -259,7 +258,7 @@ struct NextTrashScreen: View {
         let held = Set(blocks.compactMap(\.trashID)).union(lists.compactMap(\.trashID))
         let rows = entries.filter { held.contains($0.id) }
         NXPage {
-            NXScreenHeader(tile: .icon("trash.fill"), color: NX.grey, title: "Trash", subtitle: "Stays here until you erase it")
+            NXScreenHeader(tile: .icon("trash.fill"), title: "Trash", subtitle: "Stays here until you erase it")
             VStack(alignment: .leading, spacing: 0) {
                 if !rows.isEmpty {
                     HStack(spacing: 10) {

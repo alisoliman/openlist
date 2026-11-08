@@ -319,7 +319,7 @@ private struct NXDocumentRow: View {
                 // Where a search hit or link landed, in the design's fresh tint.
                 if revealed, context.lightsReveal {
                     RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .fill(style.accent.opacity(0.11))
+                        .fill(NX.highlightFill)
                         .transition(.opacity)
                 }
             }
@@ -603,7 +603,7 @@ private struct NXDocumentTask: View {
                 }
                 .buttonStyle(NXHoverButtonStyle(hover: NX.ink(0.07), radius: 6,
                                                 padding: EdgeInsets(top: 3, leading: 3, bottom: 3, trailing: 3),
-                                                foreground: noteOpen ? style.accent : NX.ink(0.45), hoverForeground: NX.ink))
+                                                foreground: noteOpen ? NX.ink : NX.ink(0.45), hoverForeground: NX.ink))
                 .onHover { noteHovering = $0 }
                 // Full strength under the pointer, as the design's hover has it.
                 // At rest it shows only while the note is open: a folded note

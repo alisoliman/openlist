@@ -174,7 +174,7 @@ struct NextSidebar: View {
         let inbox = item.route == .inbox ? library.inbox : nil
         let pulsing = inbox != nil && workbench.pulseListID == inbox?.id
         let count = count(for: item.route)
-        let row = NXSidebarRow(on: on, pulsing: pulsing, ring: inbox != nil && dropTargetID == inbox?.id ? style.accent.opacity(0.6) : nil,
+        let row = NXSidebarRow(on: on, pulsing: pulsing, ring: inbox != nil && dropTargetID == inbox?.id ? NX.dropRing : nil,
                                height: 29, title: item.label, help: "\(item.label) · \(item.keys)",
                                value: count > 0 ? "\(count) \(count == 1 ? "task" : "tasks")" : "") {
             // Sized to the design's 16px Material glyphs, which draw about 12pt wide.
@@ -204,7 +204,7 @@ struct NextSidebar: View {
     private func countText(_ count: Int, pulsing: Bool) -> some View {
         Text("\(count)")
             .font(.system(size: 11, weight: pulsing ? .bold : .medium))
-            .foregroundStyle(pulsing ? style.accent : NX.textTertiary)
+            .foregroundStyle(pulsing ? NX.ink : NX.textTertiary)
             .monospacedDigit()
             .contentTransition(.numericText())
             .modifier(NXBump(trigger: workbench.pulseRevision, active: pulsing))
@@ -246,7 +246,7 @@ struct NextSidebar: View {
                 .padding(.horizontal, 8)
         } else {
             sectionHeader(section.displayTitle, open: open, action: action)
-                .background(dropTargetID == section.id ? style.accent.opacity(0.12) : .clear,
+                .background(dropTargetID == section.id ? NX.selectedFill : .clear,
                             in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                 .contextMenu {
                     // Its name field would take the keys from an open capture's card.
@@ -303,7 +303,7 @@ struct NextSidebar: View {
         let pulsing = workbench.pulseListID == list.id
         let count = library.openCount(in: list.id)
         let editing = renaming == .list(list.id)
-        let ring: Color? = dropTargetID == list.id ? style.accent.opacity(0.6) : pulsing ? style.accent.opacity(0.25) : nil
+        let ring: Color? = dropTargetID == list.id ? NX.dropRing : pulsing ? NX.selectedRing : nil
         NXSidebarRow(on: on, pulsing: pulsing, ring: ring, height: 29, title: list.displayTitle,
                      value: "\(count) open \(count == 1 ? "task" : "tasks")", isEditing: editing) {
             NXListGlyph(list: list, size: 12)
@@ -513,11 +513,10 @@ struct NextSidebar: View {
     }
 }
 
-/// A sidebar row with the raised "current" look and a hover wash: a button,
+/// A sidebar row with a grey "current" fill and a hover wash: a button,
 /// which Tab reaches with Keyboard navigation on. To VoiceOver it's one
 /// button named `title`, unless a rename field is open in it.
 private struct NXSidebarRow<Content: View>: View {
-    @Environment(\.nextStyle) private var style
     let on: Bool
     let pulsing: Bool
     /// Nav and list rows fade between rest, hover and current; label rows snap.
@@ -556,12 +555,13 @@ private struct NXSidebarRow<Content: View>: View {
             .frame(height: height)
             .padding(.horizontal, 8)
             .background {
+                // Flat grey for the current row, as for hover: no raised
+                // card, and no accent in the sidebar.
                 RoundedRectangle(cornerRadius: 8, style: .continuous)
-                    .fill(on ? NX.paper : pulsing ? style.accent.opacity(0.12) : hovering ? NX.ink(0.045) : .clear)
-                    .shadow(color: on ? NX.ink(0.08) : .clear, radius: 1, y: 1)
+                    .fill(on ? NX.selectedFill : pulsing ? NX.highlightFill : hovering ? NX.hoverFill : .clear)
                     .overlay {
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
-                            .strokeBorder(on ? NX.ink(0.06) : ring ?? .clear, lineWidth: on ? 0.5 : 1)
+                            .strokeBorder(ring ?? .clear, lineWidth: 1)
                     }
                     .animation(NX.cssEase(300), value: pulsing)
                     .animation(fades ? NX.cssEase(300) : nil, value: on)

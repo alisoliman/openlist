@@ -418,7 +418,7 @@ struct NXCaptureCard<Draft: NXCaptureDraft>: View {
             Button(action: toggleNote) {
                 Image(systemName: "text.alignleft")
                     .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(writesNote ? style.accent : NX.ink(0.45))
+                    .foregroundStyle(writesNote ? NX.ink : NX.ink(0.45))
                     .frame(width: 24, height: 24)
                     .contentShape(Rectangle())
             }
@@ -646,7 +646,7 @@ struct NXCaptureCard<Draft: NXCaptureDraft>: View {
         }
         let text = parse.segments.reduce(Text(verbatim: "")) { text, segment in
             guard let kind = segment.kind else { return Text("\(text)\(Text(verbatim: segment.text).foregroundStyle(NX.ink))") }
-            let tone = Self.tone(kind, accent: style.accent, label: kind == .label ? labelColor(segment.text) : nil)
+            let tone = Self.tone(kind)
             let token = Text(verbatim: segment.text).foregroundStyle(tone)
                 .customAttribute(NXCaptureToken(segment: segment.id, tone: tone))
             return Text("\(text)\(token)")
@@ -654,12 +654,10 @@ struct NXCaptureCard<Draft: NXCaptureDraft>: View {
         return text.textRenderer(NXTokenRenderer())
     }
 
-    static func tone(_ kind: CaptureParse.Kind, accent: Color, label: Color? = nil) -> Color {
-        switch kind {
-        case .label: label ?? NX.textTertiary
-        case .priority: NX.redText
-        default: accent
-        }
+    /// A typed token's colour: grey, as its chip will be, so the words read
+    /// as parsed without a hue. Priority keeps its red.
+    static func tone(_ kind: CaptureParse.Kind) -> Color {
+        kind == .priority ? NX.redText : NX.textSecondary
     }
 
     /// Every token previews as soon as it's typed, from the same parse and
@@ -679,12 +677,6 @@ struct NXCaptureCard<Draft: NXCaptureDraft>: View {
 
     private func model(_ chip: CaptureChip) -> NXChipModel { .capture(chip, library: library) }
 
-    /// A typed label's own colour, when a label by that name exists.
-    private func labelColor(_ name: String) -> Color? {
-        let name = name.drop { $0 == "#" }.lowercased()
-        return library.labels.first { $0.name.lowercased() == name }?.nxColor
-    }
-
     private func destination(_ list: TaskList, isOn: Bool) -> some View {
         Button {
             draft.chooseCaptureDestination(list.id)
@@ -696,8 +688,8 @@ struct NXCaptureCard<Draft: NXCaptureDraft>: View {
             }
             .padding(.vertical, 5)
             .padding(.horizontal, 8)
-            .foregroundStyle(isOn ? Color.white : NX.textSecondary)
-            .background(isOn ? style.accent : NX.ink(0.05), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .foregroundStyle(isOn ? NX.ink : NX.textSecondary)
+            .background(isOn ? NX.chosenFill : NX.ink(0.05), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             .fixedSize()
             .contentShape(Rectangle())
         }
@@ -1093,10 +1085,10 @@ private struct NXSearchCard: View {
                 // turns it and leaves the keys with the field.
                 Text("Include completed")
                     .font(.system(size: 10.5, weight: .semibold))
-                    .foregroundStyle(includes ? Color.white : NX.textTertiary)
+                    .foregroundStyle(includes ? NX.ink : NX.textTertiary)
                     .padding(.vertical, 5)
                     .padding(.horizontal, 8)
-                    .background(includes ? style.accent : NX.ink(0.06), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .background(includes ? NX.chosenFill : NX.ink(0.06), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                     .fixedSize()
                     .contentShape(.focusEffect, RoundedRectangle(cornerRadius: 6, style: .continuous))
                     .contentShape(Rectangle())
@@ -1245,8 +1237,8 @@ private struct NXSearchRow: View {
         var value = AttributedString(text)
         if !needle.isEmpty,
            let range = value.range(of: needle, options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive]) {
-            value[range].backgroundColor = style.accent.opacity(0.15)
-            value[range].foregroundColor = style.accent
+            value[range].backgroundColor = NX.ink(0.1)
+            value[range].foregroundColor = NX.ink
         }
         return value
     }

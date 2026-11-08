@@ -48,7 +48,7 @@ struct MenuBarView: View {
         .frame(width: 320)
         .background(NX.card)
         .environment(\.nextStyle, style)
-        .tint(style.accent)
+        .tint(style.controlTint)
     }
 
     /// The design's add row (`NXAddRow`), opening Quick Add.
@@ -246,7 +246,7 @@ struct MenuBarTaskRow: View {
     }
 
     /// The rows' own time and due chips (`NXRowChips`): a time stays grey
-    /// all day beside the accent Today, and only an earlier day reads as late.
+    /// all day beside the darker Today, and only an earlier day reads as late.
     private var dueChips: [NXChipModel] {
         NXRowChips.chips(for: block, options: NXRowOptions(showList: false),
                          library: NextLibrary(lists: [], sections: [], labels: [], tasks: []), workbench: env.workbench)

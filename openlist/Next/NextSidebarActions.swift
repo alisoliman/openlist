@@ -14,7 +14,8 @@ extension Workbench {
         announceCreated(list, in: section.displayTitle)
     }
 
-    /// An empty list as the design makes one: 📝 in the current accent.
+    /// An empty list as the design makes one: 📝 in the list colour nearest the
+    /// accent, graphite while it's Neutral.
     func makeUntitledList(in section: SidebarSection?) -> TaskList {
         store.createList(title: "Untitled list", icon: "📝", accent: settings.accent.listAccent, in: section)
     }
@@ -354,6 +355,7 @@ private extension NextAccent {
     /// The list colour closest to this accent, for lists made in it.
     var listAccent: ListAccent {
         switch self {
+        case .neutral: .graphite
         case .violet: .violet
         case .blue: .blue
         case .green: .green
