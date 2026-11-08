@@ -47,10 +47,11 @@ the same link again creates a new reveal request. Links activated by the
 existing rich-text editor use the same handler; other URL schemes retain their
 normal system behaviour.
 
-Plain task notes show explicit **Open task link** / **Open list link** buttons
-below detected local references. Multiple references are numbered in note
-order, with repeated URLs shown once. These controls use the same internal
-handler without changing the note text, formatting, or editor selection.
+On the Mac, a task note's local links are links in the note itself: a click
+opens one while the note is at rest, and ⌘-click while it's being written. A
+link alone on its line shows as a bookmark. They use the same internal handler
+without changing the note text. `NoteItemLink` still names references in note
+order, with repeated URLs once, for any surface that lists them as controls.
 
 ## Library identity and backup/restore
 

@@ -604,6 +604,38 @@ do {
     check(NoteMarkdown.plainText("See \(maps) now") == "See google.com/maps now", "a bare address reads as where it goes")
     check(NoteMarkdown.plainText("```\nlet x = 1\n```\n---\n> said") == "let x = 1\n\nsaid", "fences and rules go, a quote's words stay",
           NoteMarkdown.plainText("```\nlet x = 1\n```\n---\n> said"))
+
+    let doc = "## Plan\n- [ ] Pay\n  - [x] Ask\n1. One\n> said\n```\ncode\n```\n---\n\(maps)\n[Ryokan](https://example.com/r)\nwords"
+    let lines = NoteMarkdown.lines(in: doc)
+    check(lines.map(\.kind) == [.heading(2), .task(done: false), .task(done: true), .numbered, .quote, .fence, .code, .fence, .rule,
+                                 .bookmark(URL(string: maps)!, title: nil), .bookmark(URL(string: "https://example.com/r")!, title: "Ryokan"),
+                                 .text], "each line read for what it is", "\(lines.map(\.kind))")
+    check(lines[2].depth == 1 && lines[1].depth == 0, "a list item's indent nests it")
+    check((doc as NSString).substring(with: lines[1].prefix) == "- [ ] " && (doc as NSString).substring(with: lines[0].prefix) == "## ",
+          "a line's syntax is its prefix")
+    check(lines[0].hidesPrefix && lines[4].hidesPrefix && !lines[3].hidesPrefix && !lines[8].hidesPrefix,
+          "headings, items and quotes hide their syntax; a number stays")
+    check(NoteMarkdown.lines(in: "```\n- [ ] not a box\n").map(\.kind) == [.fence, .code], "nothing in a fence is a list")
+    check(NoteMarkdown.lines(in: "- https://example.com").first?.kind == .bullet, "an item that's a link stays an item")
+    check(NoteMarkdown.linkTitle(for: URL(string: maps)!) == "Hakone Yumoto Onsen", "a Maps place is named from its address")
+    check(NoteMarkdown.linkTitle(for: URL(string: "https://www.theguardian.com/books/2018/apr/07/the-overstory-review")!)
+          == "The overstory review", "a page is named from its last step")
+    check(NoteMarkdown.linkTitle(for: URL(string: "https://example.com/")!) == "example.com", "a site with no path is named for itself")
+    check(NoteMarkdown.linkTitle(for: URL(string: "openlist://v1/A/task/B")!) == "A task in Openlist"
+          && NoteMarkdown.shortAddress(URL(string: "openlist://v1/A/list/B")!) == "Openlist", "an item link is named for what it opens")
+    check(NoteMarkdown.Block.matching("") == NoteMarkdown.Block.allCases, "an empty query lists every block")
+    check(NoteMarkdown.Block.matching("che") == [.checklist] && NoteMarkdown.Block.matching("h2") == [.heading2]
+          && NoteMarkdown.Block.matching("todo") == [.checklist], "a query finds a block by name or word")
+    check(NoteMarkdown.Block.heading2.line(from: "- [ ] Pay") == ("## Pay", 3), "turning a line keeps its words, not its syntax")
+    check(NoteMarkdown.Block.code.line(from: "") == ("```\n\n```", 4) && NoteMarkdown.Block.text.line(from: "> said") == ("said", 0),
+          "a code block opens with its caret inside; text takes the syntax off")
+    check(NoteMarkdown.toggledTask("  - [ ] Pay") == "  - [x] Pay" && NoteMarkdown.toggledTask("- [X] Pay") == "- [ ] Pay"
+          && NoteMarkdown.toggledTask("- Pay") == nil, "a box ticks and unticks")
+    check(NoteMarkdown.isChecklistShortcut("[]") && NoteMarkdown.isChecklistShortcut("  [ ]") && !NoteMarkdown.isChecklistShortcut("[x]"),
+          "[] and [ ] are the box's shortcut")
+    let linked = NoteMarkdown.spans(in: "See [it](https://a.b/c) now").first { $0.kind == .link }
+    check(linked?.address == "https://a.b/c" && linked?.group == NSRange(location: 4, length: 19), "a link knows where it goes and its extent")
+    check(NoteMarkdown.spans(in: "go openlist://v1/A/task/B now").contains { $0.kind == .url }, "an item link in a sentence is a link")
 }
 
 // MARK: - Summary

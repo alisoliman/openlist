@@ -260,6 +260,170 @@ MainActor.assumeIsolated {
     settle()
     check((window.firstResponder as? NXInspectorTextView)?.string == "Task 3" && titleFocus.last == true
             && titleFocus.count == 4, "one taken away doesn't take the focus from the one in its place", "\(titleFocus)")
+    window.makeFirstResponder(nil)
+
+    // MARK: The note as a document
+
+    func hidden(_ view: NXInspectorTextView, _ piece: String, nth: Int = 0) -> Bool {
+        let source = view.string as NSString
+        var range = NSRange(location: 0, length: 0), from = 0
+        for _ in 0...nth {
+            range = source.range(of: piece, range: NSRange(location: from, length: source.length - from))
+            from = NSMaxRange(range)
+        }
+        guard range.location != NSNotFound, let storage = view.textStorage else { return false }
+        var all = true
+        storage.enumerateAttribute(.font, in: range) { value, _, _ in
+            if ((value as? NSFont)?.pointSize ?? 99) > 1 { all = false }
+        }
+        return all
+    }
+    func caret(_ view: NXInspectorTextView, at location: Int) {
+        view.setSelectedRange(NSRange(location: location, length: 0))
+        view.selectionDidChangeInNote()
+    }
+
+    // A line's own syntax is out of sight, at rest and while written; an
+    // inline construct's shows only while the caret is inside it.
+    let doc = view(.note, "## Plan\nGet **cash** first\n- [ ] Pay\n> said")
+    check(hidden(doc, "## ") && hidden(doc, "- [ ] ") && hidden(doc, "> ") && hidden(doc, "**"), "at rest no syntax shows")
+    check(!hidden(doc, "Plan") && !hidden(doc, "cash") && !hidden(doc, "Pay"), "the words show")
+    check(window.makeFirstResponder(doc), "the document note takes the keyboard")
+    caret(doc, at: 3)
+    check(hidden(doc, "## ") && hidden(doc, "- [ ] ") && hidden(doc, "**"), "written, a line's syntax stays out of sight")
+    caret(doc, at: (doc.string as NSString).range(of: "cash").location + 2)
+    check(!hidden(doc, "**") && !hidden(doc, "**", nth: 1) && hidden(doc, "## "), "the caret in bold shows its markers, and only its")
+    let kinds = (doc.layoutManager as? NXNoteLayoutManager)?.decorations.map { "\($0.kind)" } ?? []
+    check(kinds.contains { $0.hasPrefix("box") } && kinds.contains("quote"), "a box and a quote's rule are drawn", "\(kinds)")
+
+    // The caret never rests in a line's hidden syntax.
+    let item = (doc.string as NSString).range(of: "- [ ] Pay")
+    let snapped = doc.snapped([NSValue(range: NSRange(location: item.location + 2, length: 0))], from: [])
+    check(snapped.first?.rangeValue.location == item.location + 6, "a caret in a box's syntax goes to its words")
+    let stepBack = doc.snapped([NSValue(range: NSRange(location: item.location + 5, length: 0))],
+                               from: [NSValue(range: NSRange(location: item.location + 6, length: 0))])
+    check(stepBack.first?.rangeValue.location == item.location - 1, "stepping back from an item's words goes to the line before")
+
+    // Backspace at an item's words takes its box off; Tab and ⇧Tab nest it.
+    caret(doc, at: item.location + 6)
+    doc.doCommand(by: #selector(NSResponder.insertTab(_:)))
+    check(doc.string.contains("\n  - [ ] Pay") && window.firstResponder === doc, "Tab nests a list item", doc.string)
+    doc.doCommand(by: #selector(NSResponder.insertBacktab(_:)))
+    check(doc.string.contains("\n- [ ] Pay"), "⇧Tab takes it back out", doc.string)
+    caret(doc, at: item.location + 6)
+    doc.doCommand(by: #selector(NSResponder.deleteBackward(_:)))
+    check(doc.string.contains("\nPay\n") && doc.selectedRange().location == item.location, "Backspace on its words takes the box off", doc.string)
+
+    // A box ticks with a click at rest, as one step saved at once.
+    let boxes = view(.note, "- [ ] Pay\n- [x] Book")
+    var commits = 0
+    boxes.onCommit = { commits += 1 }
+    boxes.toggleBox(at: 0)
+    check(boxes.string == "- [x] Pay\n- [x] Book" && commits == 1, "a box at rest ticks and saves", boxes.string)
+    func wordsWidth(_ view: NXInspectorTextView, _ piece: String) -> CGFloat {
+        guard let layout = view.layoutManager, let container = view.textContainer else { return 0 }
+        layout.ensureLayout(for: container)
+        let range = (view.string as NSString).range(of: piece)
+        return layout.boundingRect(forGlyphRange: layout.glyphRange(forCharacterRange: range, actualCharacterRange: nil), in: container).width
+    }
+    check(wordsWidth(boxes, "Pay") > 15, "a ticked item's words keep their width", "\(wordsWidth(boxes, "Pay"))")
+    boxes.toggleBox(at: 10)
+    check(boxes.string == "- [x] Pay\n- [ ] Book" && commits == 2, "a ticked box unticks", boxes.string)
+    if let layout = boxes.layoutManager as? NXNoteLayoutManager, let first = layout.decorations.first,
+       let rect = layout.boxRect(for: first) {
+        let point = CGPoint(x: rect.midX + boxes.textContainerOrigin.x, y: rect.midY + boxes.textContainerOrigin.y)
+        check(boxes.noteWidget(at: point, command: false) == .box(0), "a click on the box lands on it")
+    } else {
+        check(false, "the box is laid out")
+    }
+
+    // Typing: `[]` and a space make a checklist item, Return after a fence
+    // opens a block, and `/` opens the menu that turns the line.
+    let typed = view(.note, "")
+    var slashes: [NXNoteSlash?] = []
+    typed.onSlash = { slashes.append($0) }
+    check(window.makeFirstResponder(typed), "a fresh note takes the keyboard to be typed in")
+    for character in ["[", "]", " ", "P", "a", "y"] { typed.insertText(character, replacementRange: NSRange(location: NSNotFound, length: 0)) }
+    check(typed.string == "- [ ] Pay", "a space after [] makes a checklist item", typed.string)
+    typed.doCommand(by: #selector(NSResponder.insertNewline(_:)))
+    check(typed.string == "- [ ] Pay\n- [ ] ", "Return starts the next item", typed.string)
+    typed.doCommand(by: #selector(NSResponder.insertNewline(_:)))
+    check(typed.string == "- [ ] Pay\n", "Return on an empty item ends the list", typed.string)
+    typed.insertText("/", replacementRange: NSRange(location: NSNotFound, length: 0))
+    check(typed.slash != nil && slashes.last??.query == "", "a / on a line of its own opens the menu")
+    for character in ["c", "h", "e"] { typed.insertText(character, replacementRange: NSRange(location: NSNotFound, length: 0)) }
+    check(typed.slash?.query == "che" && typed.slash?.blocks == [.checklist], "the menu follows what's typed", "\(String(describing: typed.slash))")
+    typed.doCommand(by: #selector(NSResponder.insertNewline(_:)))
+    check(typed.string == "- [ ] Pay\n- [ ] " && typed.slash == nil && slashes.last == .some(nil), "Return turns the line and closes the menu",
+          typed.string)
+    typed.doCommand(by: #selector(NSResponder.insertNewline(_:)))
+    typed.insertText("/", replacementRange: NSRange(location: NSNotFound, length: 0))
+    typed.doCommand(by: #selector(NSResponder.cancelOperation(_:)))
+    check(typed.slash == nil && window.firstResponder === typed, "Esc closes the menu and keeps the note")
+    typed.doCommand(by: #selector(NSResponder.deleteBackward(_:)))
+    typed.insertText("```", replacementRange: NSRange(location: NSNotFound, length: 0))
+    typed.doCommand(by: #selector(NSResponder.insertNewline(_:)))
+    check(typed.string.hasSuffix("```\n\n```") && typed.selectedRange().location == (typed.string as NSString).length - 4,
+          "Return after a fence opens a block and closes it", typed.string)
+
+    // Words typed into a checklist item keep their spaces, written and at rest.
+    let spaced = view(.note, "Intro")
+    check(window.makeFirstResponder(spaced), "a note takes the keyboard for an item")
+    spaced.setSelectedRange(NSRange(location: 5, length: 0))
+    spaced.doCommand(by: #selector(NSResponder.insertNewline(_:)))
+    for character in ["/", "c", "h", "e"] { spaced.insertText(character, replacementRange: NSRange(location: NSNotFound, length: 0)) }
+    spaced.doCommand(by: #selector(NSResponder.insertNewline(_:)))
+    for character in "Return the copy".map(String.init) { spaced.insertText(character, replacementRange: NSRange(location: NSNotFound, length: 0)) }
+    window.makeFirstResponder(nil)
+    spaced.toggleBox(at: 6)
+    let itemWords = (spaced.string as NSString).range(of: "Return the copy")
+    var tiny: [Int] = []
+    for index in itemWords.location..<NSMaxRange(itemWords) {
+        if ((spaced.textStorage?.attribute(.font, at: index, effectiveRange: nil) as? NSFont)?.pointSize ?? 0) < 1 { tiny.append(index) }
+    }
+    check(spaced.string == "Intro\n- [x] Return the copy" && tiny.isEmpty, "an item's typed words keep their face", "\(spaced.string.debugDescription) \(tiny)")
+
+    // Words: an address pasted over them links them, and Bold wraps them.
+    let words = view(.note, "Booking through Fujiya Hotel today")
+    check(window.makeFirstResponder(words), "the note takes the keyboard to be linked")
+    let hotel = (words.string as NSString).range(of: "Fujiya Hotel")
+    words.setSelectedRange(hotel)
+    let linkBoard = NSPasteboard(name: NSPasteboard.Name("InspectorTextChecks-link-\(UUID().uuidString)"))
+    linkBoard.clearContents()
+    linkBoard.setString("https://www.fujiyahotel.jp/en/", forType: .string)
+    check(words.readSelection(from: linkBoard, type: .string), "an address pasted over words is taken")
+    check(words.string == "Booking through [Fujiya Hotel](https://www.fujiyahotel.jp/en/) today", "and links them", words.string)
+    linkBoard.releaseGlobally()
+    let today = (words.string as NSString).range(of: "today")
+    words.setSelectedRange(today)
+    words.toggleBold(nil)
+    check(words.string.hasSuffix("**today**") && words.selectedRange().length == 5, "Bold wraps the words", words.string)
+    words.toggleBold(nil)
+    check(words.string.hasSuffix(" today"), "Bold again unwraps them", words.string)
+    window.makeFirstResponder(nil)
+    let live = (words.string as NSString).range(of: "Fujiya Hotel")
+    check(words.textStorage?.attribute(.link, at: live.location, effectiveRange: nil) != nil, "at rest a link is live")
+    check(window.makeFirstResponder(words)
+          && words.textStorage?.attribute(.link, at: live.location, effectiveRange: nil) == nil
+          && words.textStorage?.attribute(.nxNoteAddress, at: live.location, effectiveRange: nil) != nil,
+          "written, a link takes ⌘-click, so a click places the caret")
+    window.makeFirstResponder(nil)
+
+    // A link alone on its line is a bookmark: its address out of sight under
+    // a card named from the address, until the caret's on the line.
+    let maps = "https://www.google.com/maps/place/Hakone+Yumoto+Onsen/@35.23,139.10,15z"
+    let card = view(.note, "Where:\n\(maps)")
+    let cardKinds = (card.layoutManager as? NXNoteLayoutManager)?.decorations.map { "\($0.kind)" } ?? []
+    check(cardKinds.contains { $0.contains("Hakone Yumoto Onsen") && $0.contains("google.com/maps") }, "a bookmark's card names it",
+          "\(cardKinds)")
+    let address = (card.string as NSString).range(of: maps)
+    check((card.textStorage?.attribute(.foregroundColor, at: address.location, effectiveRange: nil) as? NSColor) == NSColor.clear,
+          "its address is out of sight")
+    check(window.makeFirstResponder(card), "the bookmark's note takes the keyboard")
+    caret(card, at: NSMaxRange(address))
+    check((card.textStorage?.attribute(.foregroundColor, at: address.location, effectiveRange: nil) as? NSColor) != NSColor.clear,
+          "with the caret on its line, the address shows to be written")
+    window.makeFirstResponder(nil)
 }
 
 print(failures == 0 ? "✅ \(checks) inspector text checks passed" : "❌ \(failures)/\(checks) failed")
