@@ -46,7 +46,7 @@ struct DueDatePicker: View {
                 apply()
             }
 
-            Rectangle().fill(NX.ink(0.07)).frame(height: 0.5)
+            NXHairline(NX.ink(0.07))
 
             HStack(spacing: 8) {
                 // The switch speaks for the row; its words toggle it too.

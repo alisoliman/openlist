@@ -44,7 +44,7 @@ struct LabelMergeSheet: View {
                         }
                     }
                     .padding(5)
-                    .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).strokeBorder(NX.ink(0.1), lineWidth: 0.5))
+                    .overlay(NXHairlineBorder(RoundedRectangle(cornerRadius: 11, style: .continuous), NX.ink(0.1)))
                 }
                 .accessibilityElement(children: .contain)
                 .accessibilityLabel("Keep this label")

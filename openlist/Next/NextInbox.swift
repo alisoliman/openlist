@@ -18,10 +18,12 @@ struct NextInboxScreen: View {
     }
 
     /// The header's "N to triage · M kept for later · K snoozed", which the
-    /// Inbox's document mode shows too.
+    /// Inbox's document mode shows too; "All triaged" once nothing's left
+    /// nor kept for later, as the iPhone's Inbox says it, not "0 to triage".
     @MainActor
     static func subtitle(queue: [Block], kept: [Block], snoozed: Int, workbench: Workbench) -> String {
-        "\(queue.count) to triage" + (workbench.kept.isEmpty ? "" : " · \(kept.count) kept for later")
+        (queue.isEmpty && workbench.kept.isEmpty ? "All triaged" : "\(queue.count) to triage")
+            + (workbench.kept.isEmpty ? "" : " · \(kept.count) kept for later")
             + (snoozed == 0 ? "" : " · \(snoozed) snoozed")
     }
 
@@ -451,7 +453,7 @@ private struct NXTriageCard: View {
         .padding(.vertical, 12)
         .padding(.horizontal, 14)
         .background(NX.ink(0.02))
-        .overlay(alignment: .top) { Rectangle().fill(NX.ink(0.08)).frame(height: 0.5) }
+        .overlay(alignment: .top) { NXHairline(NX.ink(0.08)) }
     }
 
     private func caps(_ text: String) -> some View {

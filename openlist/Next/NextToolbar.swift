@@ -117,7 +117,7 @@ struct NextToolbar: View {
         .background {
             Color.clear.contentShape(Rectangle()).gesture(WindowDragGesture())
         }
-        .overlay(alignment: .bottom) { Rectangle().fill(NX.ink(0.07)).frame(height: 0.5) }
+        .overlay(alignment: .bottom) { NXHairline(NX.ink(0.07)) }
         .overlay(alignment: .top) {
             // Centred, but never over the crumb or the buttons.
             NXNotchPlacement(leading: 18 + trafficLightsInset + leadingWidth + 8, trailing: 18 + trailingWidth + 8) {
@@ -311,7 +311,7 @@ struct NXWorkNotch: View {
             notchButton("xmark", help: "Stop", color: NX.ink(0.42), hover: NX.ink(0.06)) { workbench.stopWork() }
         }
         .padding(.leading, 5)
-        .overlay(alignment: .leading) { Rectangle().fill(NX.ink(0.1)).frame(width: 0.5) }
+        .overlay(alignment: .leading) { NXHairline(NX.ink(0.1), axis: .vertical) }
     }
 
     private func toggleWorkPanel() {
@@ -393,8 +393,8 @@ private struct NXNotchChrome: ViewModifier {
                 .padding(.horizontal, 14)
             }
             .clipShape(UnevenRoundedRectangle(bottomLeadingRadius: 15, bottomTrailingRadius: 15, style: .continuous))
-            .overlay(UnevenRoundedRectangle(bottomLeadingRadius: 15, bottomTrailingRadius: 15, style: .continuous)
-                .strokeBorder(NX.ink(0.12), lineWidth: 0.5))
+            .overlay(NXHairlineBorder(UnevenRoundedRectangle(bottomLeadingRadius: 15, bottomTrailingRadius: 15, style: .continuous),
+                                      NX.ink(0.12)))
             .shadow(color: NX.shadowWarm.opacity(0.12), radius: 13, y: 10)
     }
 }

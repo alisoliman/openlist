@@ -42,7 +42,7 @@ struct InboxScreen: View {
                         .disabled(selectable.isEmpty)
                         .accessibilityHint(selectable.isEmpty ? "No open tasks to select" : "")
                         .accessibilityIdentifier("inbox.select")
-                    OLIconButton("gearshape", label: "Settings", kind: .plain) { navigator.open(.settings) }
+                    OLIconButton("gearshape", label: "Settings", kind: .bare, iconSize: 22) { navigator.open(.settings) }
                         .accessibilityIdentifier("inbox.settings")
                 }
             }

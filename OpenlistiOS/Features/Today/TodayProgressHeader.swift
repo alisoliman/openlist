@@ -8,7 +8,12 @@ struct TodayProgressHeader: View {
 
     var body: some View {
         VStack(spacing: 12) {
-            if dynamicTypeSize.isAccessibilitySize {
+            if total == 0 {
+                // Nothing due, planned or done today: no "0 of 0 done" and
+                // empty rail over the clear day, which says so itself.
+                OLTitle("Today")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            } else if dynamicTypeSize.isAccessibilitySize {
                 VStack(alignment: .leading, spacing: 8) {
                     OLTitle("Today")
                     count
@@ -21,11 +26,13 @@ struct TodayProgressHeader: View {
                     count
                 }
             }
-            ProgressView(value: Double(done), total: Double(max(1, total)))
-                .tint(OL.ink)
-                .accessibilityLabel("Today's progress")
-                .accessibilityValue("\(done) of \(total) done")
-                .accessibilityIdentifier("today.progress")
+            if total > 0 {
+                ProgressView(value: Double(done), total: Double(total))
+                    .tint(OL.ink)
+                    .accessibilityLabel("Today's progress")
+                    .accessibilityValue("\(done) of \(total) done")
+                    .accessibilityIdentifier("today.progress")
+            }
         }
         .padding(.top, 4)
     }

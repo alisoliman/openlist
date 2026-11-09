@@ -262,7 +262,7 @@ struct NXNoticeCard<Actions: View>: View {
         .padding(.vertical, 10)
         .padding(.horizontal, 12)
         .background(NX.card, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).strokeBorder(NX.ink(0.12), lineWidth: 0.5))
+        .overlay(NXHairlineBorder(RoundedRectangle(cornerRadius: 11, style: .continuous), NX.ink(0.12)))
         .accessibilityElement(children: .contain)
     }
 

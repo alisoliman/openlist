@@ -200,16 +200,38 @@ private struct NXTasksQueryBar: View {
             tabs
             HStack(alignment: .bottom, spacing: 22) {
                 field(query: query, focused: focused, hasQuery: hasQuery)
-                Button { workbench.tasksGrouping = workbench.tasksGrouping.next } label: {
-                    Text(workbench.tasksGrouping.title)
-                        .font(.system(size: 13.5, weight: .medium))
-                        .fixedSize()
-                        // The design's 13.5/1 line box.
-                        .padding(.vertical, (13.5 - NX.lineHeight(13.5)) / 2)
-                        .padding(.bottom, 13)
-                        .contentShape(Rectangle())
+                // A menu of the three, the one on show ticked, where a click
+                // used to step to the next one unseen. Its chevron says so.
+                Menu {
+                    Picker("Group by", selection: Binding(get: { workbench.tasksGrouping },
+                                                          set: { workbench.tasksGrouping = $0 })) {
+                        ForEach(TasksGroupingMode.allCases) { mode in
+                            Text(mode.title).tag(mode)
+                        }
+                    }
+                    .pickerStyle(.inline)
+                    .labelsHidden()
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(workbench.tasksGrouping.title)
+                            .font(.system(size: 13.5, weight: .medium))
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 9, weight: .semibold))
+                            .accessibilityHidden(true)
+                    }
+                    .fixedSize()
+                    // The design's 13.5/1 line box.
+                    .padding(.vertical, (13.5 - NX.lineHeight(13.5)) / 2)
+                    .padding(.bottom, 13)
+                    .contentShape(Rectangle())
                 }
+                .menuStyle(.button)
                 .buttonStyle(NXTextHoverStyle(color: NX.textTertiary, hover: NX.ink))
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("Group the tasks by list, by date, or not at all")
+                .accessibilityLabel("Group by")
+                .accessibilityValue(workbench.tasksGrouping.title)
             }
             .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .named(Self.space)).maxX }) { clusterEnd = $0 }
             .overlay(alignment: .topTrailing) {
@@ -233,7 +255,7 @@ private struct NXTasksQueryBar: View {
         .coordinateSpace(.named(Self.space))
         .onGeometryChange(for: CGFloat.self, of: \.size.width) { barWidth = $0 }
         .padding(.top, 22)
-        .overlay(alignment: .bottom) { Rectangle().fill(NX.ink(0.08)).frame(height: 0.5) }
+        .overlay(alignment: .bottom) { NXHairline(NX.ink(0.08)) }
         // The popover's popIn plays at the design's 170ms whatever the Motion
         // setting, as the tabs' and field's 280ms do.
         .animation(NX.ease(170), value: focused)
@@ -475,7 +497,7 @@ private struct NXTasksQueryBar: View {
             .font(.system(size: 10.5, weight: .medium))
             .foregroundStyle(NX.textQuaternary)
             .padding(.top, 9)
-            .overlay(alignment: .top) { Rectangle().fill(NX.ink(0.07)).frame(height: 0.5) }
+            .overlay(alignment: .top) { NXHairline(NX.ink(0.07)) }
             .padding(.top, 6)
         }
         .padding(.top, 10)
@@ -833,7 +855,7 @@ private struct NXTasksSentenceBar: View {
         .onGeometryChange(for: CGFloat.self, of: \.size.width) { barWidth = $0 }
         .padding(.top, 18)
         .padding(.bottom, 4)
-        .overlay(alignment: .bottom) { Rectangle().fill(NX.ink(0.07)).frame(height: 0.5) }
+        .overlay(alignment: .bottom) { NXHairline(NX.ink(0.07)) }
         .onChange(of: env.navigator.route) { _, _ in menu = nil }
         .onAppear {
             clicks.install { clicks, event in

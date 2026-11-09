@@ -606,7 +606,7 @@ struct NXSettingDetail<Content: View>: View {
             .padding(.horizontal, 14)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(NX.inspector, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(NX.ink(0.08), lineWidth: 0.5))
+            .overlay(NXHairlineBorder(RoundedRectangle(cornerRadius: 10, style: .continuous), NX.ink(0.08)))
             .padding(.horizontal, 14)
             .padding(.bottom, 14)
             .transition(.opacity)

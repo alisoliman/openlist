@@ -333,7 +333,7 @@ private struct NXListCover: View {
                             .scaledToFill()
                     }
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(NX.ink(0.1), lineWidth: 0.5))
+                    .overlay(NXHairlineBorder(RoundedRectangle(cornerRadius: 14, style: .continuous), NX.ink(0.1)))
                     .padding(.bottom, 22)
                     .accessibilityElement()
                     .accessibilityLabel("List cover: \(list.coverMetadata?.displayName ?? list.displayTitle)")

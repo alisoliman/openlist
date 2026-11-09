@@ -80,7 +80,9 @@ private struct TaskDetailPage: View {
             }
         } content: {
             HStack(alignment: .top, spacing: 14) {
-                OLCheckbox(done ? .done : .open, size: 28, title: task.displayTitle) { actions.toggle(task) }
+                // Ringed as the task's row is: red when it's late, else its priority's colour.
+                OLCheckbox(PhoneTaskRow.check(for: task, closing: closing, now: env.now, calendar: env.settings.calendar),
+                           size: 28, title: task.displayTitle) { actions.toggle(task) }
                     .padding(.top, 0)
                 TextField("Task", text: $title.value, axis: .vertical)
                     .font(OLFont.detailTitle)

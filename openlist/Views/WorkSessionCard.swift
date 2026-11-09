@@ -135,7 +135,7 @@ struct WorkSessionCard: View {
                     }
                     .padding(.top, 14)
                 }
-                Rectangle().fill(NX.ink(0.08)).frame(height: 0.5).padding(.top, 16)
+                NXHairline(NX.ink(0.08)).padding(.top, 16)
                 HStack(spacing: 14) {
                     NXWorkLink(session == nil ? "Choose another task" : "Switch task…", action: chooseTask)
                     Spacer(minLength: 8)

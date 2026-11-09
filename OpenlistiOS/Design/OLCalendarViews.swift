@@ -132,9 +132,14 @@ struct OLTimelineGrid: View {
                     .frame(height: 1)
                     .padding(.leading, 52)
                     .offset(y: y)
+                // Kept to the gutter before the rule: at large text sizes
+                // the hour shrinks to fit there rather than run under the blocks.
                 Text(String(format: "%02d:00", hour))
                     .font(OLFont.monoHour)
                     .foregroundStyle(OL.muted)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.5)
+                    .frame(width: 52 - 10 - 4, height: 16, alignment: .leading)
                     .offset(x: 10, y: y - 8)
             }
         }

@@ -229,7 +229,7 @@ struct NXHoverButtonStyle: ButtonStyle {
                 .padding(style.padding)
                 .foregroundStyle(hovering ? (style.hoverForeground ?? style.foreground) : style.foreground)
                 .background(hovering || pressed ? style.hover : style.rest, in: shape)
-                .overlay { if let border = style.border { shape.strokeBorder(border, lineWidth: 0.5) } }
+                .overlay { if let border = style.border { NXHairlineBorder(shape, border) } }
                 .contentShape(Rectangle())
                 // A press gives a little under the pointer and springs back
                 // as it lets go, so a click always feels heard. Only the
@@ -269,7 +269,7 @@ extension View {
     /// The design's warm card shadow: hairline plus a soft drop.
     func nxCardShadow(radius: CGFloat = 12, hairline: Double = 0.12, drop: Double = 0.09, y: CGFloat = 14, blur: CGFloat = 40) -> some View {
         self
-            .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous).strokeBorder(NX.ink(hairline), lineWidth: 0.5))
+            .overlay(NXHairlineBorder(RoundedRectangle(cornerRadius: radius, style: .continuous), NX.ink(hairline)))
             .shadow(color: NX.shadowWarm.opacity(drop), radius: blur / 2, y: y)
     }
 }

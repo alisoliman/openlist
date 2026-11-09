@@ -42,6 +42,10 @@ struct OLDock: View {
         }
         .padding(6)
         .frame(height: OLMetrics.dockHeight)
+        // The surface most of the way under the icons, so rows scrolling
+        // beneath stay a soft shade and don't read through them, as in dark
+        // mode they did; the glass keeps its edge and light.
+        .background(OL.surface.opacity(0.8), in: .capsule)
         .glassEffect(.regular.tint(OL.surface.opacity(0.55)), in: .capsule)
         .olGlassShadow(.float, in: Capsule(), fill: OL.surface)
         .accessibilityElement(children: .contain)

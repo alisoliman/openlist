@@ -215,13 +215,16 @@ struct OLButtonStyle: ButtonStyle {
             .padding(.vertical, slack)
             .contentShape(.rect)
             .padding(.vertical, -slack)
-            .opacity(isEnabled ? 1 : 0.45)
             .scaleEffect(configuration.isPressed && !style.reduceMotion ? 0.97 : 1)
             .animation(style.animation(OLStyle.press), value: configuration.isPressed)
     }
 
+    // Disabled, any kind is a grey well with muted words, as the system's
+    // buttons are, rather than its colours faded: a faded Add read as a
+    // grey pill with white words that were hard to make out.
     private var foreground: Color {
-        switch kind {
+        guard isEnabled else { return OL.muted }
+        return switch kind {
         case .neutral: OL.ink
         case .primary: OL.onAccent
         case .ink: OL.canvas
@@ -230,7 +233,8 @@ struct OLButtonStyle: ButtonStyle {
     }
 
     private var background: Color {
-        switch kind {
+        guard isEnabled else { return OL.sunken }
+        return switch kind {
         case .neutral: OL.sunken
         case .primary: OL.accent
         case .ink: OL.ink
