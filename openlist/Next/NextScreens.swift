@@ -60,19 +60,19 @@ private struct NXTodayPage: View {
             let workbench = env.workbench
             let model = Self.model(outline: outline, workbench: workbench, showsCompleted: env.settings.showsCompletedTasks,
                                    now: now) { !workbench.placedTaskIDs().contains($0) }
-            NXPage(rowIDs: NXGroupsStack.rowIDs(model.groups, workbench: workbench)) {
+            // The page, with the day's meetings and planned sessions beside
+            // the tasks, or folded above them on a narrow page.
+            NXTodayLayout(rowIDs: NXGroupsStack.rowIDs(model.groups, workbench: workbench), now: now,
+                          toPlan: model.toPlan) {
                 NXScreenHeader(tile: .icon("sun.max.fill"), title: "Today",
                                subtitle: now.formatted(.dateTime.weekday(.wide).day().month(.wide)),
                                progress: model.progress)
-                // The day's meetings and planned sessions beside the tasks,
-                // or folded above them on a narrow page.
-                NXTodayWithSchedule(now: now, toPlan: model.toPlan) {
-                    if model.clear {
-                        todayClear(done: model.progress.done)
-                    }
-                    NXGroupsStack(groups: model.groups, options: NXRowOptions(now: now))
-                    NXAddRow(text: "Add a task for today", forToday: true)
+            } tasks: {
+                if model.clear {
+                    todayClear(done: model.progress.done)
                 }
+                NXGroupsStack(groups: model.groups, options: NXRowOptions(now: now))
+                NXAddRow(text: "Add a task for today", forToday: true)
             }
         }
     }

@@ -105,6 +105,31 @@ enum SampleData {
         return meetings.filter { $0.end > today }
     }
 
+    /// A long day for a review session (`OpenlistReviewMeetings` = "long"):
+    /// the meetings above and more from early morning to late evening, so
+    /// Today's hours run longer than the window.
+    static func longDayMeetings(now: Date, calendar: Calendar = .current) -> [FixedBusyTime] {
+        let today = calendar.startOfDay(for: now)
+        let day: [(id: String, title: String, hour: Int, minute: Int, minutes: Int, location: String?)] = [
+            ("early-run", "Run", 6, 30, 45, nil),
+            ("planning", "Weekly planning", 8, 0, 30, "Video call"),
+            ("one-on-one", "1:1 with Sam", 10, 15, 30, nil),
+            ("lunch", "Lunch with Priya", 12, 30, 60, "Café Lumen"),
+            ("customer", "Customer call", 14, 0, 45, "Video call"),
+            ("sprint", "Sprint review", 16, 0, 60, "Studio, 3rd floor"),
+            ("pickup", "School pickup", 17, 30, 30, nil),
+            ("dinner", "Dinner with Alex", 19, 30, 90, "Osteria"),
+            ("late-sync", "Late sync with the US team", 22, 0, 45, "Video call"),
+        ]
+        let more = day.compactMap { item -> FixedBusyTime? in
+            guard let start = calendar.date(bySettingHour: item.hour, minute: item.minute, second: 0, of: today) else { return nil }
+            return FixedBusyTime(id: "sample-long-\(item.id)", title: item.title, start: start,
+                                 end: start.addingTimeInterval(TimeInterval(item.minutes * 60)), location: item.location,
+                                 calendarTitle: "Work")
+        }
+        return meetings(now: now, calendar: calendar) + more
+    }
+
     // MARK: - Builders
 
     @MainActor
