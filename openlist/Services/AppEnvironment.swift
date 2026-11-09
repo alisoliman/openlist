@@ -101,7 +101,7 @@ final class AppEnvironment {
         } else {
             libraryMaintenance = nil
         }
-        calendar = CalendarCoordinator(store: store)
+        calendar = CalendarCoordinator(store: store, externalCalendars: Self.reviewMeetings())
         mcp = MCPIntegration(store: store, settings: settings)
         mcp.calendar = MCPCalendarBridge(calendar: calendar, settings: settings)
         navigator = Navigator(defaults: ReviewSession.defaults)
@@ -214,6 +214,20 @@ final class AppEnvironment {
         #else
         return false
         #endif
+    }
+
+    /// A review session's calendar: the sample meetings, as the iPhone's
+    /// review session has its fixture's, never the Mac's own calendars. For
+    /// the empty states, OpenlistReviewMeetings in the copy's Info.plist can
+    /// say NO, for no calendar connected, or "none", for a connected calendar
+    /// with nothing on it. Nil outside review sessions.
+    private static func reviewMeetings() -> ExternalCalendarSource? {
+        guard ReviewSession.identifier != nil else { return nil }
+        switch Bundle.main.object(forInfoDictionaryKey: "OpenlistReviewMeetings") {
+        case let on as Bool where !on: return nil
+        case let value as String where value == "none": return ExternalCalendarSource(fixtureBusyTimes: [])
+        default: return ExternalCalendarSource(fixtureBusyTimes: SampleData.meetings(now: .now))
+        }
     }
 
     /// Refreshes the widgets when something they mirror changes without a

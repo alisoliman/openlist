@@ -80,6 +80,31 @@ enum SampleData {
         store.save()
     }
 
+    /// A review session's calendar, in place of the Mac's own: a morning
+    /// standup, a meeting under way when the session opens and one later on,
+    /// so Today and the Calendar show meetings whatever the hour it's opened.
+    /// Times are on the quarter hour, as real meetings are; a late opening
+    /// puts the last past midnight, into tomorrow.
+    static func meetings(now: Date, calendar: Calendar = .current) -> [FixedBusyTime] {
+        let today = calendar.startOfDay(for: now)
+        let quarter: TimeInterval = 15 * 60
+        let start = Date(timeIntervalSinceReferenceDate: (now.timeIntervalSinceReferenceDate / quarter).rounded(.down) * quarter)
+        var meetings: [FixedBusyTime] = []
+        if let standup = calendar.date(bySettingHour: 9, minute: 30, second: 0, of: today) {
+            meetings.append(FixedBusyTime(id: "sample-standup", title: "Team standup", start: standup,
+                                          end: standup.addingTimeInterval(quarter), location: "Video call", calendarTitle: "Work"))
+        }
+        let review = start.addingTimeInterval(-2 * quarter)
+        meetings.append(FixedBusyTime(id: "sample-design-review", title: "Design review", start: review,
+                                      end: review.addingTimeInterval(4 * quarter), location: "Studio, 3rd floor",
+                                      calendarTitle: "Work"))
+        let catchUp = start.addingTimeInterval(5 * quarter)
+        meetings.append(FixedBusyTime(id: "sample-catch-up", title: "Catch-up with Maya", start: catchUp,
+                                      end: catchUp.addingTimeInterval(2 * quarter), calendarTitle: "Personal"))
+        // Only what's left of today and tomorrow, not yesterday's evening.
+        return meetings.filter { $0.end > today }
+    }
+
     // MARK: - Builders
 
     @MainActor

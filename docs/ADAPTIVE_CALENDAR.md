@@ -40,6 +40,32 @@ configurable **25-minute** minimum by default. Short tasks can use shorter slots
 Turn on **Keep together** to require one uninterrupted session for the
 remaining work.
 
+## Today's schedule
+
+**Today** shows the same plan for the day beside its tasks, under **Schedule**:
+what's on **now** and **next**, then the rest of the day on its hours with a now
+line, from an hour before now to the day's last item. **Earlier today** unfolds
+the part of the day already gone. Meetings are quiet grey blocks; planned task
+sessions look as they do on the Calendar, cards with the task's checkbox in its
+list's colour, and the item under way or next is drawn heavier. Hovering a meeting shows its time,
+length, place and calendar. Clicking a session selects its task, as a row click
+does, and double-clicking opens it; its menu also has **Remove from Calendar**
+and **Show in Calendar**. A session planned now offers **Start**.
+
+When today's tasks have no time yet, a line under the schedule counts them and
+fits each into the next free slot, as **Find a Slot** does. Planning shows on the
+schedule as it lands. With no calendar connected, the schedule says so quietly and
+offers **Connect Calendars**, the same access Settings asks for.
+
+On a wide window the schedule is a column beside the task groups. While a task is
+open in the inspector, the column gives that side to the inspector rather than
+narrowing the tasks. On a narrow window it folds to its now and next lines above
+the groups, and **Schedule** unfolds the day's hours. Which of the two applies
+depends on the room the page has without the inspector, so opening a task never
+moves the rows. `TodaySchedule` (in `openlist/Views`) picks the day, now and
+next out of `CalendarCoordinator.visibleBlocks` and the calendars' busy time; it
+never plans.
+
 ## Available hours and meetings
 
 Each list chooses **Work** or **Personal** under **Hours** in its header's "…" menu,
@@ -294,7 +320,7 @@ The focused checks run production code with deterministic or isolated inputs:
 | Scheduling | Deadline competition, unscheduled backlog, overflow, minimum-session fragmentation, keep-together, overlapping work/personal hours, breaks/overrides, fixed events, active overruns, pin conflicts, horizon states, and DST. |
 | Calendar persistence | Migration from a legacy SQLite fixture, reopen durability, recurrence/descendant history, duplication/deletion behavior, estimates, placements, suggestions, corrections, and explicit reset. |
 | Calendar runtime | Explicit start, pause/resume, overrun shifts, fixed boundaries, completion/deferral, lock/away handlers, interruption/restart recovery, and external-source fixtures. |
-| Calendar layout | Completed and future blocks sharing time, lanes over the items’ times with recorded work keeping its minimum rendered height, zero-duration markers, dense history, and deterministic lane ordering. |
+| Calendar layout | Completed and future blocks sharing time, lanes over the items’ times with recorded work keeping its minimum rendered height, zero-duration markers, dense history, and deterministic lane ordering; Today's schedule: the day's items and holds, now and next, and the hours it draws. |
 | Full project checks | The focused calendar suites plus existing logic, editor, duplication, export, lifecycle, visibility, sync, signing, MCP, and helper checks. |
 
 Before the completion-history and nudge refinements, validation on 2026-09-13 passed **984 scheduling assertions**,

@@ -69,6 +69,10 @@ final class ExternalCalendarSource {
         fixtureBusyTimes = busyTimes
     }
 
+    /// Whether the meetings are a fixture's, as in the checks and a review
+    /// session, rather than the Mac's calendars: Today shows them as connected.
+    var isFixture: Bool { fixtureBusyTimes != nil }
+
     func refresh(start: Date, end: Date) {
         range = DateInterval(start: start, end: end)
         reload()
@@ -153,8 +157,10 @@ final class ExternalCalendarSource {
             guard event.status != .canceled, event.availability != .free,
                   !(event.attendees?.contains { $0.isCurrentUser && $0.participantStatus == .declined } ?? false),
                   let start = event.startDate, let end = event.endDate, end > start else { return nil }
+            let location = event.location?.trimmingCharacters(in: .whitespacesAndNewlines)
             return FixedBusyTime(id: "\(event.calendarItemIdentifier)-\(start.timeIntervalSinceReferenceDate)",
-                                 title: event.title ?? "Busy", start: start, end: end)
+                                 title: event.title ?? "Busy", start: start, end: end,
+                                 location: location?.isEmpty == false ? location : nil, calendarTitle: event.calendar?.title)
         }.sorted { $0.start < $1.start }
     }
 }

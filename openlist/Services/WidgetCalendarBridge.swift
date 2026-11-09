@@ -65,7 +65,7 @@ extension WidgetSnapshotSources {
                        meetings cache: MeetingCache = MeetingCache()) -> [WidgetSnapshot.AgendaEvent] {
         let store = coordinator.store
         let meetings = cache.busyTimes(in: interval, from: coordinator.externalCalendars).filter {
-            $0.end > interval.start && $0.start < interval.end && $0.end.timeIntervalSince($0.start) < 20 * 3600
+            $0.end > interval.start && $0.start < interval.end && !$0.isAllDayHold
         }.map {
             WidgetSnapshot.AgendaEvent(id: $0.id, kind: .meeting, title: $0.title, start: $0.start, end: $0.end)
         }

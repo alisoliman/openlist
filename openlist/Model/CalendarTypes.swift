@@ -117,6 +117,16 @@ struct FixedBusyTime: Identifiable, Sendable {
     var title: String
     var start: Date
     var end: Date
+    /// Where the meeting is, as its calendar has it, for the details Today
+    /// shows under the pointer.
+    var location: String? = nil
+    /// The name of the calendar it comes from.
+    var calendarTitle: String? = nil
+
+    /// Busy time of 20 hours or more, like Out of office or a holiday: no
+    /// meeting to draw, but Plan keeps clear of it, so the Calendar names it
+    /// in the day's header and Today beside its schedule.
+    var isAllDayHold: Bool { end.timeIntervalSince(start) >= 20 * 3600 }
 }
 
 struct PlacementInput: Identifiable, Sendable {
