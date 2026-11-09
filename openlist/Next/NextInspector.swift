@@ -198,6 +198,10 @@ struct NextInspector: View {
     @Environment(\.nextStyle) private var style
     @Environment(\.nextLibrary) private var library
     @Environment(\.openURL) private var openURL
+    /// The page's width with no details beside it.
+    @Environment(\.nxPageRoom) private var pageRoom
+    /// The narrowest the details get, giving the page its room in a narrow
+    /// window, and the page's least beside them.
     static let width: CGFloat = 360
     /// The widest the page's note runs, so its lines stay comfortable to
     /// read; everything else on the page runs to the column's edge, as a
@@ -278,7 +282,7 @@ struct NextInspector: View {
                 .padding(.vertical, 10)
                 .overlay(alignment: .top) { Rectangle().fill(NX.ink(0.07)).frame(height: 0.5) }
         }
-        .frame(width: isPage ? nil : Self.width)
+        .frame(width: isPage ? nil : panelWidth)
         .frame(maxWidth: isPage ? .infinity : nil, maxHeight: .infinity)
         // The page is the paper the screen was on.
         .background(isPage ? NX.paper : NX.inspector)
@@ -296,8 +300,14 @@ struct NextInspector: View {
                     .allowsHitTesting(false)
             }
         }
-        // Docked beside the page, it's divided from it rather than floating over it.
-        .overlay(alignment: .leading) { if !isPage { Rectangle().fill(NX.ink(0.1)).frame(width: 0.5) } }
+        // Docked beside the page, it's divided from it rather than floating
+        // over it, by an edge that drags to resize it.
+        .overlay(alignment: .leading) {
+            if !isPage {
+                Rectangle().fill(NX.ink(0.1)).frame(width: 0.5)
+                NXDetailsResizeEdge()
+            }
+        }
         .contentShape(Rectangle())
         .onTapGesture {}
         .onAppear {
@@ -346,9 +356,16 @@ struct NextInspector: View {
         }
     }
 
+    /// The width the details were dragged to, as far as the window has room
+    /// for: a narrow window keeps the page 360pt beside them, down to the
+    /// details' own 360.
+    private var panelWidth: CGFloat {
+        min(workbench.detailsWidth, max(Self.width, pageRoom - Self.width))
+    }
+
     /// The page sets its parts in the column and margins every screen has
     /// (`NXPage`), so it opens where the screen's own header was; the panel,
-    /// in its own 16pt margins.
+    /// in its own 24pt margins.
     @ViewBuilder private func column<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
         if isPage {
             NXReadingColumnView(measure: NXPageMeasure.reading + 80) {
@@ -357,7 +374,7 @@ struct NextInspector: View {
                     .padding(.horizontal, 40)
             }
         } else {
-            content().padding(.horizontal, 16)
+            content().padding(.horizontal, 24)
         }
     }
 
@@ -378,24 +395,30 @@ struct NextInspector: View {
             }
             Rectangle().fill(NX.ink(0.07)).frame(height: 0.5)
                 .padding(.top, isPage ? 20 : 16)
-            noteBox
-                .id(ContentReveal.Anchor.taskNote(task.id))
-                .padding(.top, isPage ? 16 : 12)
-                // Its `/` menu draws over the sections under it.
-                .zIndex(1)
-            VStack(alignment: .leading, spacing: 28) {
-                // As the design: not two levels down.
-                if ancestors.count < OutlinePolicy.maximumDepth {
-                    NXInspectorSubtasks(task: task, showsEmpty: offersSubtasks)
+            // The note and every section after it share one column: on the
+            // page, the note's reading measure, so their rules, toggles and
+            // text line up.
+            VStack(alignment: .leading, spacing: 0) {
+                noteBox
+                    .id(ContentReveal.Anchor.taskNote(task.id))
+                    .padding(.top, isPage ? 16 : 12)
+                    // Its `/` menu draws over the sections under it.
+                    .zIndex(1)
+                VStack(alignment: .leading, spacing: 28) {
+                    // As the design: not two levels down.
+                    if ancestors.count < OutlinePolicy.maximumDepth {
+                        NXInspectorSubtasks(task: task, showsEmpty: offersSubtasks)
+                            .id(task.id)
+                    }
+                    // Its slider, popover, sheet and expansion belong to one task.
+                    NXInspectorPlan(task: task, isPage: isPage)
                         .id(task.id)
+                    NXInspectorFiles(task: task)
+                    activity
                 }
-                // Its slider, popover, sheet and expansion belong to one task.
-                NXInspectorPlan(task: task, isPage: isPage)
-                    .id(task.id)
-                NXInspectorFiles(task: task)
-                activity
+                .padding(.top, 24)
             }
-            .padding(.top, 24)
+            .frame(maxWidth: isPage ? Self.noteMeasure : .infinity, alignment: .leading)
         }
     }
 
@@ -969,5 +992,31 @@ private struct NXInspectorPillFade: ViewModifier {
             .foregroundStyle(colors.text)
             .background(colors.fill, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             .onChange(of: isOn) { _, now in withAnimation(NX.cssEase(140)) { shown = now } }
+    }
+}
+
+/// The details' leading edge, which drags to make them wider or narrower,
+/// between 420 and 720pt, kept on this Mac.
+private struct NXDetailsResizeEdge: View {
+    @Environment(AppEnvironment.self) private var env
+    /// The width the drag started from.
+    @State private var start: CGFloat?
+
+    var body: some View {
+        Color.clear
+            .frame(width: 9)
+            .contentShape(Rectangle())
+            .pointerStyle(.frameResize(position: .leading))
+            .gesture(DragGesture(minimumDistance: 1, coordinateSpace: .global)
+                .onChanged { drag in
+                    let workbench = env.workbench
+                    let base = start ?? workbench.detailsWidth
+                    if start == nil { start = base }
+                    workbench.detailsWidth = Workbench.clampedDetailsWidth(base - drag.translation.width)
+                }
+                .onEnded { _ in start = nil })
+            .offset(x: -4)
+            .help("Drag to resize the details")
+            .accessibilityHidden(true)
     }
 }

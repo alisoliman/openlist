@@ -82,7 +82,7 @@ From the code:
 
 This replaces the folded-note hint, the hover note button, the inline note, and the one-line previews on label, Inbox and Completed rows. Today and Tasks get the glyph too.
 
-**Details beside the list ([mockup 1](1-rows-and-peek.png)).** This is today's inspector, widened to 520pt and resizable (420–720, remembered). In narrow windows it overlays the list rather than squeezing it. It opens with Space, Return, double-click or the row's open icon. It shows:
+**Details beside the list ([mockup 1](1-rows-and-peek.png)).** This is today's inspector, widened to 520pt and resizable (420–720, remembered). In a narrow window it gives way, down to 360pt, so the list keeps at least 360pt beside it. It opens with Space, Return, double-click or the row's open icon. It shows:
 - the title
 - one quiet line of details (date, list, labels, repeat, reminder, priority, star)
 - a hairline, then the note
@@ -210,7 +210,7 @@ Light mode, Openlist's tokens (`NX` paper, ink and text strengths, SF Pro, Instr
 |---|---|---|
 | **1. Clean rows, one note surface** | Remove the in-row note, its editor and the row note button. Add one note glyph on every screen (the link glyph opens the URL). Space toggles details, and ⇧↩ / Edit Note opens details with the caret in the note (⇧↩ from a line being written now reaches it). Drop the `notes:` preview lines. Triage shows the note with Markdown stripped. Export writes the note as Markdown. Placeholders become "Add a note…" everywhere. Links keep the accent token, which the monochrome theme makes ink. Update the checks that use `NXNoteTextView` and `openNotes`. | **S**, 1–2 days |
 | **2. The note editor** | Hide syntax except inside the span being edited (no reflow on focus). Tickable square boxes. Drawn bullets and numbers with hanging indents. Quote rule, code blocks, heading spacing, dividers. Links open on click (⌘-click while writing), plus ⌘K. Paste over selection makes a link, and paste on an empty line makes a bookmark (title from the URL). `/` menu reusing the slash card. Tab indents lists. Format keys. VoiceOver reads the rendered text and can tick boxes. Restyle only the edited paragraph, so long notes stay fast. Round-trip and rendering checks in `InspectorTextChecks`. | **M**, 3–4 days |
-| **3. Details beside the list, and the page** | Widen the inspector to 520pt, resizable and remembered, overlaying the list in narrow windows. On the page, the note and every section share the reading column. Subtasks after the note. | **S–M**, 2 days |
+| **3. Details beside the list, and the page** | Widen the inspector to 520pt, resizable and remembered, giving way down to 360pt in narrow windows. On the page, the note and every section share the reading column. Subtasks after the note. | **S–M**, 2 days |
 | **4. Images, files, mentions, capture** | Paste or drop images and files into the note: an `Attachment` plus an inline reference, with Files listing only the rest. Export writes media paths. `@` mentions and pasted Openlist links become chips. Turn into subtasks. Quick capture's note line uses the editor. MCP tool text describes Openlist Markdown. | **M–L**, 4–5 days |
 | **5. iPhone** | Share `NoteMarkdown` and the renderer with iOS. The detail order becomes title, chips line, note, subtasks. `UITextView` note with taps at rest and the keyboard bar. Glyph on rows. Styled note in triage, capture and Share. UI tests updated (`detail.note` and friends). | **M–L**, 4–6 days |
 

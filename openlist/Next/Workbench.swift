@@ -252,6 +252,7 @@ final class Workbench {
     private static let retiredOpenNotesKey = "nextOpenNotes"
     private static let sidebarHiddenKey = "nextSidebarHidden"
     private static let sidebarFoldsKey = "nextSidebarFolds"
+    private static let detailsWidthKey = "nextDetailsWidth"
     private static func isSidebarGroup(_ key: String) -> Bool { key.hasPrefix("sec-") }
 
     /// The inspector's Add subtask, as the design's: goes to the task's list
@@ -305,6 +306,21 @@ final class Workbench {
         didSet { if isSidebarHidden != oldValue { defaults?.set(isSidebarHidden, forKey: Self.sidebarHiddenKey) } }
     }
     var isSidebarFoldedForRoom = false
+    /// The details' width beside the screen, as it was last dragged, kept
+    /// on this Mac.
+    var detailsWidth = Workbench.defaultDetailsWidth {
+        didSet {
+            let clamped = Self.clampedDetailsWidth(detailsWidth)
+            // Set within its own observer, it isn't observed again.
+            if clamped != detailsWidth { detailsWidth = clamped }
+            if detailsWidth != oldValue { defaults?.set(Double(detailsWidth), forKey: Self.detailsWidthKey) }
+        }
+    }
+    static let defaultDetailsWidth: CGFloat = 520
+    static let detailsWidths: ClosedRange<CGFloat> = 420...720
+    static func clampedDetailsWidth(_ width: CGFloat) -> CGFloat {
+        min(max(width.rounded(), detailsWidths.lowerBound), detailsWidths.upperBound)
+    }
     /// Shown again by hand: it stays, even where a narrow window would fold
     /// it for room, until the details close or the window has the room again.
     var isSidebarKeptOverRoom = false
@@ -391,6 +407,9 @@ final class Workbench {
         self.defaults = defaults
         // Notes no longer show under their tasks.
         defaults?.removeObject(forKey: Self.retiredOpenNotesKey)
+        if let width = defaults?.object(forKey: Self.detailsWidthKey) as? Double {
+            detailsWidth = Self.clampedDetailsWidth(CGFloat(width))
+        }
         // The sidebar as this Mac left it, hidden or with its groups folded.
         if restoresSidebar {
             isSidebarHidden = defaults?.bool(forKey: Self.sidebarHiddenKey) ?? false
