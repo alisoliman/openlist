@@ -14,8 +14,8 @@ cd "$(dirname "$0")/.."
 # The UI test classes of the first two parts, about a third of the suite's
 # time each, the unit tests going with the first. The third part runs every
 # other UI test class, so a new class always runs somewhere.
-PART1=(ScreensUITests TaskSwipeUITests TaskDueMenuUITests ListAppearanceUITests LaunchTests)
-PART2=(InteractionUITests PaperAppearanceUITests CaptureTriageUITests TaskDetailContextUITests ShellUITests)
+PART1=(ScreensUITests TaskSwipeUITests ListAppearanceUITests LaunchTests)
+PART2=(InteractionUITests PaperAppearanceUITests CaptureTriageUITests TaskDueMenuUITests TaskDetailContextUITests ShellUITests)
 SELECT=()
 BUNDLES="OpenlistiOSTests OpenlistiOSUITests"
 case "${OPENLIST_IOS_PART:-}" in
@@ -48,11 +48,6 @@ if [[ -n "${OPENLIST_IOS_UDID:-}" ]]; then
 else
     UDID=$(xcrun simctl create "Openlist iOS Checks $$" "$DEVICE_TYPE" "$RUNTIME")
     trap 'xcrun simctl shutdown "$UDID" >/dev/null 2>&1 || true; xcrun simctl delete "$UDID" >/dev/null 2>&1 || true' EXIT
-    # Booted before the build, not beside it: a new runner takes minutes to
-    # boot a fresh simulator, and the two together slowed the build fivefold.
-    SECONDS=0
-    xcrun simctl bootstatus "$UDID" -b > "$OUT/boot.log" 2>&1 || { tail -20 "$OUT/boot.log"; exit 1; }
-    echo "Booted the simulator in $((SECONDS / 60)) min $((SECONDS % 60)) s"
 fi
 COMMON=(-project openlist.xcodeproj -scheme OpenlistiOS -configuration Debug
     -destination "id=$UDID" -derivedDataPath "$DERIVED"
@@ -61,6 +56,14 @@ if [[ -n "${OPENLIST_SPM_DIR:-}" ]]; then COMMON+=(-clonedSourcePackagesDirPath 
 SECONDS=0
 xcodebuild "${COMMON[@]}" build-for-testing > "$OUT/build.log" 2>&1 || { tail -100 "$OUT/build.log"; exit 1; }
 echo "Built the app and its tests in $((SECONDS / 60)) min $((SECONDS % 60)) s"
+if [[ -z "${OPENLIST_IOS_UDID:-}" ]]; then
+    # Booted after the build, not before or beside it: on CI's three-core
+    # runners a booting or freshly booted simulator slowed the build from
+    # two minutes to as many as sixteen.
+    SECONDS=0
+    xcrun simctl bootstatus "$UDID" -b > "$OUT/boot.log" 2>&1 || { tail -20 "$OUT/boot.log"; exit 1; }
+    echo "Booted the simulator in $((SECONDS / 60)) min $((SECONDS % 60)) s"
+fi
 # From the build's .xctestrun, as the project would have xcodebuild resolve
 # its Swift packages again at every launch of the app.
 XCTESTRUN=$(ls -t "$DERIVED"/Build/Products/*.xctestrun | sed -n 1p)
@@ -77,7 +80,8 @@ xcodebuild -xctestrun "$XCTESTRUN" -destination "id=$UDID" ${SELECT[@]+"${SELECT
     -parallel-testing-enabled NO -retry-tests-on-failure -test-iterations 2 \
     -collect-test-diagnostics never \
     -resultBundlePath "$OUT/Tests.xcresult" test-without-building 2>&1 | tee "$OUT/test.log" \
-    | grep --line-buffered -E "^Test Case .*(passed|failed) \(|: error: -\[" | sed -l -E "s/^Test Case '-\[[A-Za-z]+\.//" \
+    | { grep --line-buffered -E "^Test Case .*(passed|failed) \(|: error: -\[" || true; } \
+    | sed -l -E "s/^Test Case '-\[[A-Za-z]+\.([A-Za-z]+) ([A-Za-z0-9_]+)\]' /\1.\2 /" \
     || { tail -100 "$OUT/test.log"; exit 1; }
 echo "Ran the tests${OPENLIST_IOS_PART:+ of part $OPENLIST_IOS_PART} in $((SECONDS / 60)) min $((SECONDS % 60)) s"
 xcrun xcresulttool get test-results tests --path "$OUT/Tests.xcresult" --compact > "$OUT/tests.json"
