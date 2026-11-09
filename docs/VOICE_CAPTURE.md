@@ -235,3 +235,4 @@ newline-separated tasks. It stays listening until Done/Return, then uses the
 normal completion and saving paths without microphone access, model downloads,
 or Apple Intelligence. This environment override is honored only inside a
 Debug/Dev review session. It tests UX and lifecycle, not recognition quality.
+
