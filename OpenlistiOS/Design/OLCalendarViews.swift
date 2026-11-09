@@ -8,7 +8,7 @@ import SwiftUI
 // MARK: - C29 Week strip
 
 /// Seven days, Monday or the week-start setting's day first: the picked one
-/// in the accent, today in the Today colour.
+/// in the accent, today on a grey fill.
 struct OLWeekStrip: View {
     let days: [Date]
     @Binding var selection: Date
@@ -47,10 +47,12 @@ struct OLWeekStrip: View {
                     .font(OLFont.weekDate)
                     .monospacedDigit()
             }
-            .foregroundStyle(isSelected ? OL.onAccent : isToday ? OL.todayText : OL.ink)
+            .foregroundStyle(isSelected ? OL.onAccent : OL.ink)
             .frame(maxWidth: .infinity, minHeight: 56)
             .background {
-                if isSelected { RoundedRectangle(cornerRadius: 16, style: .continuous).fill(OL.accent) }
+                if isSelected || isToday {
+                    RoundedRectangle(cornerRadius: 16, style: .continuous).fill(isSelected ? OL.accent : OL.accentSoft)
+                }
             }
             .contentShape(.rect(cornerRadius: 16))
         }

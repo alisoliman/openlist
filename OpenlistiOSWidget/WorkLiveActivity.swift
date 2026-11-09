@@ -42,7 +42,7 @@ struct WorkLiveActivity: Widget {
                     .foregroundStyle(palette.accentText)
             } compactTrailing: {
                 CompactMinutes(state: context.state)
-                    .foregroundStyle(context.state.isPaused ? palette.todayText : palette.accentText)
+                    .foregroundStyle(context.state.isPaused ? palette.muted : palette.accentText)
             } minimal: {
                 Image(systemName: context.state.isPaused ? "pause.fill" : "stopwatch")
                     .foregroundStyle(palette.accentText)
@@ -93,11 +93,11 @@ private struct WorkHeadline: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 1) {
             HStack(spacing: 6) {
-                Circle().fill(state.isPaused ? palette.today : palette.success).frame(width: 7, height: 7)
+                Circle().fill(state.isPaused ? palette.muted : palette.success).frame(width: 7, height: 7)
                 Text(state.isPaused ? "Paused" : "Working")
             }
             .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(state.isPaused ? palette.todayText : palette.successText)
+            .foregroundStyle(state.isPaused ? palette.muted : palette.successText)
             Text(state.title)
                 .font(.system(size: 17, weight: .bold))
                 .foregroundStyle(palette.ink)

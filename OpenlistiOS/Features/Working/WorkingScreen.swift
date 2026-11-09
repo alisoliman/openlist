@@ -51,7 +51,7 @@ private struct WorkingPage: View {
                     .frame(maxHeight: dynamicTypeSize.isAccessibilitySize ? nil : .infinity)
                 if let next = next(after: work) { nextCard(next) }
             } else {
-                OLEmptyState(symbol: "timer", tint: OL.accentText, title: "Nothing on now",
+                OLEmptyState(symbol: "timer", title: "Nothing on now",
                              message: "Start a task from Today or its page, and it runs here.",
                              actionTitle: "Close") { navigator.dismissCover() }
                     .frame(maxHeight: .infinity)
@@ -64,7 +64,7 @@ private struct WorkingPage: View {
         let paused = work.state != .working
         return VStack(spacing: 0) {
             HStack(spacing: 8) {
-                Circle().fill(paused ? OL.today : OL.success).frame(width: 8, height: 8)
+                Circle().fill(paused ? OL.muted : OL.success).frame(width: 8, height: 8)
                 Text(work.state == .working ? "Working" : work.state == .paused ? "Paused" : "Up now")
             }
             .font(OLFont.eyebrow)

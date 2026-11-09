@@ -57,7 +57,7 @@ struct ListsScreen: View {
                         OLFlowLayout {
                             ForEach(library.labels) { label in
                                 let key = query.key(for: label)
-                                OLChipButton(OLChip(key)) { navigator.open(.find(key)) }
+                                OLChipButton(OLChip(key, dot: label.accent.color)) { navigator.open(.find(key)) }
                             }
                         }
                     }

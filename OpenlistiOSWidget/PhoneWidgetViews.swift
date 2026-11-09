@@ -42,11 +42,11 @@ private struct TodaySmall: View {
             HStack {
                 Text(shortDay(state.now, calendar: state.calendar))
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(palette.todayText)
+                    .foregroundStyle(palette.muted)
                 Spacer(minLength: 0)
                 Image(systemName: "sun.max")
                     .font(.system(size: 17, weight: .medium))
-                    .foregroundStyle(palette.today)
+                    .foregroundStyle(palette.muted)
             }
             Spacer(minLength: 0)
             Text("Today")
@@ -84,7 +84,7 @@ private struct TodayMedium: View {
             VStack(alignment: .leading, spacing: 0) {
                 Text(WidgetFormat.weekdayName(state.now, calendar: state.calendar))
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(palette.todayText)
+                    .foregroundStyle(palette.muted)
                 Text("Today")
                     .font(OLSerif.fixed(size: 28))
                     .foregroundStyle(palette.ink)
@@ -185,11 +185,11 @@ struct InboxWidgetView: View {
             HStack {
                 Text("Inbox")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(palette.infoText)
+                    .foregroundStyle(palette.muted)
                 Spacer(minLength: 0)
                 Image(systemName: "tray")
                     .font(.system(size: 17, weight: .medium))
-                    .foregroundStyle(palette.info)
+                    .foregroundStyle(palette.muted)
             }
             Spacer(minLength: 0)
             Text("\(count)")

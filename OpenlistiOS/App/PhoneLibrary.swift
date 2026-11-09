@@ -34,4 +34,11 @@ extension NextLibrary {
         guard let listID = task.listID else { return [] }
         return tasks(in: listID).filter { $0.parentID == task.id && $0.isTask }
     }
+
+    /// The colour of the label named `name`, with or without its `#`, for its
+    /// dot; nil for a name no label has yet.
+    func labelColor(named name: String) -> Color? {
+        let name = TaskLabel.normalize(name)
+        return labels.first { TaskLabel.namesMatch($0.name, name) }?.accent.color
+    }
 }

@@ -70,7 +70,7 @@ private struct TaskDetailPage: View {
                         .accessibilityIdentifier("detail.doneEditing")
                 }
                 OLIconButton(task.isStarred ? "star.fill" : "star", label: task.isStarred ? "Unstar" : "Star", kind: .bare,
-                             iconSize: 22, tint: task.isStarred ? OL.today : OL.muted) {
+                             iconSize: 22, tint: task.isStarred ? OL.star : OL.muted) {
                     actions.edit([task], task.isStarred ? "Unstarred “\(task.displayTitle)”" : "Starred “\(task.displayTitle)”",
                                  icon: "star") { env.store.toggleStar($0) }
                 }
@@ -255,9 +255,11 @@ private struct TaskDetailPage: View {
             .accessibilityIdentifier("detail.list")
             Button { sheet = .labels } label: {
                 OLFieldRow("Labels", separator: .inset(16)) {
-                    Text(labels.isEmpty ? "None" : labels.map { "#\($0.name)" }.joined(separator: " "))
+                    // Each label's colour as a dot before its name.
+                    (labels.isEmpty ? Text("None") : Text.olLabels(labels.map { ($0.name, $0.accent.color) }))
                         .foregroundStyle(labels.isEmpty ? OL.muted : OL.ink)
                         .lineLimit(1)
+                        .accessibilityLabel(labels.isEmpty ? "None" : labels.map { "#\($0.name)" }.joined(separator: " "))
                 }
                 .contentShape(.rect)
             }

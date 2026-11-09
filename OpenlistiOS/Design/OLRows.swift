@@ -49,12 +49,11 @@ struct OLTile: View {
     }
 }
 
-/// A settings row's coloured square (`.stile`): 30 pt, radius 8, an 18 pt
-/// symbol in white or the tile colour's own ink.
+/// A settings row's square (`.stile`): 30 pt, radius 8, an 18 pt glyph in
+/// grey on `sunken`. Grey whatever the setting, as the Mac's screen tiles
+/// are: a setting has no colour of its own.
 struct OLSettingsTile: View {
     let symbol: String
-    var fill: Color = OL.accent
-    var ink: Color = .white
     /// One of the mockups' own glyphs, in place of `symbol`.
     var icon: OLIcon?
 
@@ -63,21 +62,14 @@ struct OLSettingsTile: View {
             if let icon { OLIconView(icon: icon, size: 18) }
             else { Image(systemName: symbol).font(.system(size: 15, weight: .semibold)) }
         }
-            .foregroundStyle(ink)
+            .foregroundStyle(OL.muted)
             .frame(width: 30, height: 30)
-            .background(fill, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .background(OL.sunken, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             .accessibilityHidden(true)
     }
 
-    /// The design's tile colours by section (mockup 15).
-    static func accent(_ symbol: String) -> OLSettingsTile { OLSettingsTile(symbol: symbol, ink: OL.onAccent) }
-    static func today(_ symbol: String) -> OLSettingsTile { OLSettingsTile(symbol: symbol, fill: OL.today, ink: OL.onToday) }
-    static func today(icon: OLIcon) -> OLSettingsTile { OLSettingsTile(symbol: "", fill: OL.today, ink: OL.onToday, icon: icon) }
-    static func info(icon: OLIcon) -> OLSettingsTile { OLSettingsTile(symbol: "", fill: OL.info, ink: OL.onInfo, icon: icon) }
-    static func teal(icon: OLIcon) -> OLSettingsTile { OLSettingsTile(symbol: "", fill: OL.teal, icon: icon) }
-    static func teal(_ symbol: String) -> OLSettingsTile { OLSettingsTile(symbol: symbol, fill: OL.teal) }
-    static func info(_ symbol: String) -> OLSettingsTile { OLSettingsTile(symbol: symbol, fill: OL.info, ink: OL.onInfo) }
-    static func danger(_ symbol: String) -> OLSettingsTile { OLSettingsTile(symbol: symbol, fill: OL.danger, ink: OL.onDanger) }
+    static func symbol(_ symbol: String) -> OLSettingsTile { OLSettingsTile(symbol: symbol) }
+    static func icon(_ icon: OLIcon) -> OLSettingsTile { OLSettingsTile(symbol: "", icon: icon) }
 }
 
 // MARK: - C16 Settings rows
@@ -86,15 +78,18 @@ struct OLSettingsTile: View {
 /// chevron, a toggle or anything else. 52 pt at least, 16/22.
 struct OLSettingsRow<Trailing: View>: View {
     var tile: OLSettingsTile?
+    /// A label's colour, as a dot before its name, in place of a tile.
+    var dot: Color?
     let title: String
     var separator: OLSeparator = .none
     @ViewBuilder var trailing: Trailing
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
-    init(_ title: String, tile: OLSettingsTile? = nil, separator: OLSeparator = .none,
+    init(_ title: String, tile: OLSettingsTile? = nil, dot: Color? = nil, separator: OLSeparator = .none,
          @ViewBuilder trailing: () -> Trailing) {
         self.title = title
         self.tile = tile
+        self.dot = dot
         self.separator = separator
         self.trailing = trailing()
     }
@@ -102,6 +97,7 @@ struct OLSettingsRow<Trailing: View>: View {
     var body: some View {
         HStack(spacing: 12) {
             if let tile { tile }
+            if let dot { OLLabelDot(color: dot, size: 8) }
             if dynamicTypeSize.isAccessibilitySize {
                 VStack(alignment: .leading, spacing: 8) {
                     titleLabel

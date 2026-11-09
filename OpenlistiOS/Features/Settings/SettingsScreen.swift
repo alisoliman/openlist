@@ -33,7 +33,7 @@ struct SettingsScreen: View {
             OLHeader("Settings")
             OLGroup("Tasks") {
                 VStack(spacing: 0) {
-                    OLSettingsRow("Show done in lists", tile: .accent("checkmark")) {
+                    OLSettingsRow("Show done in lists", tile: .symbol("checkmark")) {
                         Toggle("Show done in lists", isOn: $settings.showsCompletedTasks).labelsHidden().olToggle()
                             .accessibilityIdentifier("settings.showDone")
                     }
@@ -42,7 +42,7 @@ struct SettingsScreen: View {
                             ForEach([0, 2, 1, 7], id: \.self) { Text(weekdayTitle($0)).tag($0) }
                         }
                     } label: {
-                        OLSettingsRow("Week starts on", tile: .today(icon: .calendar), separator: .settings) {
+                        OLSettingsRow("Week starts on", tile: .icon(.calendar), separator: .settings) {
                             OLRowValue(weekdayTitle(settings.firstWeekday))
                         }
                         .contentShape(.rect)
@@ -54,7 +54,7 @@ struct SettingsScreen: View {
                             ForEach([2, 3, 5, 8], id: \.self) { Text("\($0) seconds").tag($0) }
                         }
                     } label: {
-                        OLSettingsRow("Undo window", tile: .accent("arrow.uturn.backward"), separator: .settings) {
+                        OLSettingsRow("Undo window", tile: .symbol("arrow.uturn.backward"), separator: .settings) {
                             OLRowValue("\(settings.undoDwellSeconds) s")
                         }
                         .contentShape(.rect)
@@ -66,7 +66,7 @@ struct SettingsScreen: View {
                             ForEach(AppSettings.AfterVoiceCapture.allCases) { Text($0.title).tag($0) }
                         }
                     } label: {
-                        OLSettingsRow("After voice capture", tile: .accent("mic"), separator: .settings) {
+                        OLSettingsRow("After voice capture", tile: .symbol("mic"), separator: .settings) {
                             OLRowValue(settings.afterVoiceCapture.title)
                         }
                         .contentShape(.rect)
@@ -80,11 +80,11 @@ struct SettingsScreen: View {
             TaskSwipeSettingsSection()
             OLGroup("Motion") {
                 VStack(spacing: 0) {
-                    OLSettingsRow("Reduce motion", tile: .teal(icon: .wave)) {
+                    OLSettingsRow("Reduce motion", tile: .icon(.wave)) {
                         Toggle("Reduce motion", isOn: $settings.reducesMotion).labelsHidden().olToggle()
                             .accessibilityIdentifier("settings.reduceMotion")
                     }
-                    OLSettingsRow("Haptics", tile: .teal("iphone.radiowaves.left.and.right"), separator: .settings) {
+                    OLSettingsRow("Haptics", tile: .symbol("iphone.radiowaves.left.and.right"), separator: .settings) {
                         Toggle("Haptics", isOn: $settings.playsHaptics).labelsHidden().olToggle()
                             .accessibilityIdentifier("settings.haptics")
                     }
@@ -94,7 +94,7 @@ struct SettingsScreen: View {
             OLGroup("Calendar") {
                 VStack(spacing: 0) {
                     Button(action: connectCalendar) {
-                        OLSettingsRow("Calendar access", tile: .info(icon: .calendar)) {
+                        OLSettingsRow("Calendar access", tile: .icon(.calendar)) {
                             OLRowValue(calendarAccess ? "On" : "Off", color: calendarAccess ? OL.successText : OL.muted,
                                        showsChevron: !calendarAccess)
                         }
@@ -103,7 +103,7 @@ struct SettingsScreen: View {
                     .buttonStyle(OLRowPressStyle())
                     .accessibilityIdentifier("settings.calendarAccess")
                     Button { navigator.open(.planHours) } label: {
-                        OLSettingsRow("Plan hours", tile: .info(icon: .stopwatch), separator: .settings) {
+                        OLSettingsRow("Plan hours", tile: .icon(.stopwatch), separator: .settings) {
                             OLRowValue(PlanHours.summary(env.calendar.preferences))
                         }
                         .contentShape(.rect)
@@ -116,12 +116,12 @@ struct SettingsScreen: View {
             OLGroup("Library") {
                 VStack(spacing: 0) {
                     Button { navigator.open(.activity) } label: {
-                        OLSettingsRow("Activity", tile: .accent("waveform.path.ecg")) { OLRowValue(nil) }
+                        OLSettingsRow("Activity", tile: .symbol("waveform.path.ecg")) { OLRowValue(nil) }
                             .contentShape(.rect)
                     }
                     .buttonStyle(OLRowPressStyle())
                     Button { navigator.open(.trash) } label: {
-                        OLSettingsRow("Trash", tile: .danger("trash"), separator: .settings) {
+                        OLSettingsRow("Trash", tile: .symbol("trash"), separator: .settings) {
                             OLRowValue(trashCount == 0 ? nil : "\(trashCount)")
                         }
                         .contentShape(.rect)
@@ -130,7 +130,7 @@ struct SettingsScreen: View {
                     .accessibilityLabel("Trash")
                     .accessibilityValue(trashCount == 0 ? "Empty" : "\(trashCount) \(trashCount == 1 ? "item" : "items")")
                     Button { syncDetail = true } label: {
-                        OLSettingsRow("iCloud sync", tile: .info("icloud"), separator: .settings) {
+                        OLSettingsRow("iCloud sync", tile: .symbol("icloud"), separator: .settings) {
                             let sync = syncStatus
                             OLRowValue(sync.text, color: sync.color, showsChevron: false)
                         }
@@ -140,7 +140,7 @@ struct SettingsScreen: View {
                     .accessibilityIdentifier("settings.sync")
                     #if DEBUG
                     Button { navigator.showComponentGallery() } label: {
-                        OLSettingsRow("Component gallery", tile: .accent("square.grid.3x3"), separator: .settings) {
+                        OLSettingsRow("Component gallery", tile: .symbol("square.grid.3x3"), separator: .settings) {
                             OLRowValue(nil)
                         }
                         .contentShape(.rect)

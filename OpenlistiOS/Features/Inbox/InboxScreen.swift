@@ -35,7 +35,7 @@ struct InboxScreen: View {
         let selectable = (captures + snoozed).filter { !$0.isCompleted }
         return OLScreen(identifier: PhoneRoute.inbox.screenIdentifier, scrolls: !captures.isEmpty || !snoozed.isEmpty) {
             OLTopBar {
-                OLEyebrow(toTriage == 0 ? "All triaged" : "\(toTriage) to triage", color: OL.infoText)
+                OLEyebrow(toTriage == 0 ? "All triaged" : "\(toTriage) to triage")
             } trailing: {
                 HStack(spacing: 4) {
                     OLIconButton("checkmark.circle", label: "Select tasks", kind: .bare, iconSize: 22) { isSelecting = true }
@@ -53,7 +53,7 @@ struct InboxScreen: View {
                     OLLoadingState("Getting your lists from iCloud…")
                         .frame(maxHeight: .infinity)
                 } else {
-                    OLEmptyState(symbol: "tray", tint: OL.infoText, title: "Inbox is empty",
+                    OLEmptyState(symbol: "tray", title: "Inbox is empty",
                                  message: "What you capture lands here, to file or schedule later.",
                                  actionTitle: "Capture something") { navigator.open(.capture(CaptureRequest())) }
                         .frame(maxHeight: .infinity)

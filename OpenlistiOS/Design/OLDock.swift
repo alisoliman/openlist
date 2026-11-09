@@ -90,17 +90,18 @@ struct OLDock: View {
     }
 
     /// `.badge`: 7 pt from the tab's top, its left edge 5 pt right of centre.
-    /// The halves split the tab, so the badge grows rightward from there.
+    /// The halves split the tab, so the badge grows rightward from there. In
+    /// the ink, as the Inbox has no colour of its own.
     private var badge: some View {
         HStack(alignment: .top, spacing: 0) {
             Color.clear.frame(height: 0)
             Text(inboxCount > 99 ? "99+" : "\(inboxCount)")
                 .font(OLFont.badge)
                 .dynamicTypeSize(...DynamicTypeSize.xLarge)
-                .foregroundStyle(OL.onInfo)
+                .foregroundStyle(OL.onAccent)
                 .padding(.horizontal, 5)
                 .frame(minWidth: 18, minHeight: 18)
-                .background(OL.info, in: .capsule)
+                .background(OL.accent, in: .capsule)
                 .fixedSize()
                 .contentTransition(.numericText())
                 .padding(.leading, 5)
@@ -238,7 +239,9 @@ extension View {
 // MARK: - C24 Tray
 
 /// The tray (`.tray`): an `ink` card, 18 pt corners, a message, its Undo, and
-/// a 2 pt bar draining over the message's time, coloured by what happened.
+/// a 2 pt bar draining over the message's time, coloured by what happened:
+/// a status in its colour, anything else a soft line in the tray's words'
+/// colour, as the accent, the ink itself, would vanish into the tray.
 struct OLTrayView: View {
     let message: TrayMessage
     let action: () -> Void
@@ -323,8 +326,8 @@ struct OLTrayView: View {
         switch message.tone {
         case .success: OL.success
         case .danger: OL.danger
-        case .warning: OL.today
-        case .accent: OL.accent
+        case .warning: OL.amber
+        case .accent: OL.canvas.opacity(0.45)
         case .neutral: OL.muted
         }
     }

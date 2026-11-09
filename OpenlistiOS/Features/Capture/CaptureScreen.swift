@@ -179,7 +179,9 @@ struct CaptureScreen: View {
                         .accessibilityIdentifier("capture.note")
                 }
                 let chips = chips(parse, snapshot: snapshot)
-                let details = [dateLabel(snapshot)].compactMap { $0 } + chips.map(\.chip.label)
+                // A label's chip shows its name after its dot; VoiceOver hears it as typed.
+                let details = [dateLabel(snapshot)].compactMap { $0 }
+                    + chips.map { $0.chip.dot == nil ? $0.chip.label : "#" + $0.chip.label }
                 OLFlowLayout {
                     dueDateControl(snapshot, parse: parse)
                     ForEach(chips, id: \.chip.label) { chip in
@@ -355,7 +357,7 @@ struct CaptureScreen: View {
         if snapshot.priority != .none {
             chips.append(OLChip(snapshot.priority.title, symbol: "exclamationmark", small: true, tint: OL.danger))
         }
-        chips += snapshot.labels.map { OLChip("#" + $0, small: true, tint: OL.teal) }
+        chips += snapshot.labels.map(labelChip)
         return chips
     }
 
@@ -500,8 +502,8 @@ struct CaptureScreen: View {
     static func tone(_ kind: CaptureParse.Kind) -> Color {
         switch kind {
         case .date, .time, .repeatRule, .list: OL.accentText
-        case .estimate: OL.muted
-        case .label: OL.teal
+        // A label is grey as its chip is, which shows its colour as a dot.
+        case .estimate, .label: OL.muted
         case .priority: OL.danger
         }
     }
@@ -567,7 +569,7 @@ struct CaptureScreen: View {
             ForEach(completion.options) { option in
                 let list = library.list(option.listID)
                 OLChipButton(OLChip(option.name, glyph: list.map { $0.isSystemInbox ? "📥" : $0.icon },
-                                    small: true, tint: list == nil ? OL.teal : nil)) {
+                                    small: true, dot: list == nil ? library.labelColor(named: option.name) : nil)) {
                     text = completion.completing(text, with: option)
                     env.haptics.play(.selection)
                 }
@@ -663,13 +665,8 @@ struct CaptureScreen: View {
                     chips.append((OLChip(snapshot.priority.title, symbol: "exclamationmark", small: true, tint: OL.danger), mark.raw))
                 }
             case .label:
-                let name = String(mark.raw.dropFirst())
-                let known = library.labels.contains { $0.name.caseInsensitiveCompare(name) == .orderedSame }
-                let label = known ? "#" + name.lowercased() : "New #" + name.lowercased()
-                if !has(label) {
-                    chips.append((OLChip(label, symbol: known ? nil : "plus", small: true, tint: known ? OL.teal : OL.muted),
-                                  mark.raw))
-                }
+                let chip = labelChip(String(mark.raw.dropFirst()))
+                if !has(chip.label) { chips.append((chip, mark.raw)) }
             case .list:
                 if let list = library.list(parse.listID) {
                     chips.append((OLChip(list.displayTitle, glyph: list.isSystemInbox ? "📥" : list.icon, small: true), mark.raw))
@@ -677,6 +674,16 @@ struct CaptureScreen: View {
             }
         }
         return chips
+    }
+
+    /// A label as its chip shows it: grey, with its colour as a dot, as the
+    /// Mac's; a name no label has yet says Add makes it.
+    private func labelChip(_ name: String) -> OLChip {
+        let name = name.lowercased()
+        guard let color = library.labelColor(named: name) else {
+            return OLChip("New #" + name, symbol: "plus", small: true, tint: OL.muted)
+        }
+        return OLChip(name, small: true, dot: color)
     }
 
     // MARK: Destinations

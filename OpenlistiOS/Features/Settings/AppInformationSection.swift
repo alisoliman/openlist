@@ -6,7 +6,7 @@ struct AppInformationSection: View {
             VStack(spacing: 0) {
                 if let url = URL(string: "https://github.com/alisoliman/openlist/blob/main/docs/PRIVACY.md") {
                     Link(destination: url) {
-                        OLSettingsRow("Privacy policy", tile: .info("hand.raised")) {
+                        OLSettingsRow("Privacy policy", tile: .symbol("hand.raised")) {
                             OLRowValue(nil)
                         }
                         .contentShape(.rect)
@@ -16,7 +16,7 @@ struct AppInformationSection: View {
                 }
                 if let url = URL(string: "https://github.com/alisoliman/openlist/blob/main/docs/SUPPORT.md") {
                     Link(destination: url) {
-                        OLSettingsRow("Help and support", tile: .info("questionmark.circle"), separator: .settings) {
+                        OLSettingsRow("Help and support", tile: .symbol("questionmark.circle"), separator: .settings) {
                             OLRowValue(nil)
                         }
                         .contentShape(.rect)
