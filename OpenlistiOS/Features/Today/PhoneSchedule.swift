@@ -99,7 +99,11 @@ struct TodayNowNext {
         let title: String
         /// "Working · 50 min left", "Until 15:00", "14:00 · in 3h 20m".
         let time: String
-        /// A meeting's place, or a session's list.
+        /// The time alone, as the folded card's one line says it: "50 min
+        /// left", "Paused", "Until 15:00", "14:00".
+        let brief: String
+        /// A meeting's place, a link named as its service ("Microsoft
+        /// Teams"), or a session's list.
         let place: String?
         let taskID: UUID?
         /// A session's list, whose colour marks it.
@@ -131,10 +135,11 @@ struct TodayNowNext {
             let time = role == .next
                 ? "\(clock(item.start)) · in \(OLFormat.span(OLFormat.minutes(from: now, to: item.start)))"
                 : "Until \(clock(item.end))"
-            let place = item.kind == .meeting ? item.meeting?.location : list(listID)
+            let brief = role == .next ? clock(item.start) : "Until \(clock(item.end))"
+            let place = item.kind == .meeting ? item.place : list(listID)
             return Line(id: item.id, role: role, kind: item.kind == .meeting ? .meeting : .session, title: item.title,
-                        time: time, place: place, taskID: item.taskID, listID: item.kind == .meeting ? nil : listID,
-                        meeting: item.meeting)
+                        time: time, brief: brief, place: place, taskID: item.taskID,
+                        listID: item.kind == .meeting ? nil : listID, meeting: item.meeting)
         }
 
         var current: [Line] = []
@@ -146,8 +151,14 @@ struct TodayNowNext {
             case .paused: "Paused · \(work.leftText)"
             case .planned: work.end.map { "Until \(clock($0))" } ?? work.leftText
             }
+            let brief = switch work.state {
+            case .working: work.leftText
+            case .paused: "Paused"
+            case .planned: time
+            }
             current.append(Line(id: "work-\(task.id)", role: .now, kind: .work(work.state), title: task.displayTitle,
-                            time: time, place: list(task.listID), taskID: task.id, listID: task.listID, meeting: nil))
+                            time: time, brief: brief, place: list(task.listID), taskID: task.id, listID: task.listID,
+                            meeting: nil))
         }
         for item in schedule.current where current.count < 2 {
             if let id = item.taskID, id == work.task?.id { continue }

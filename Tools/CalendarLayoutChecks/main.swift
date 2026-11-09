@@ -261,4 +261,5 @@ expect(CalendarOverlapLayout.dropMinute(y: 10_000, hourHeight: 40, hours: 8...24
 expect(CalendarOverlapLayout.dropMinute(y: .nan, hourHeight: 40, hours: hours, grab: 0, duration: 30) == 8 * 60,
        "A drop with no position starts at the first hour")
 todayScheduleChecks()
+meetingPlaceChecks()
 print("Calendar layout: \(checks) checks passed")

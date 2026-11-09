@@ -7,8 +7,8 @@ import XCTest
 
 /// Today's Now card and the Timeline in the Mac's look: what's on now and
 /// next, meetings included, a meeting's details on a long press, Fit for the
-/// tasks with no time yet, the quiet empty and no-calendar states, and a
-/// block's checkbox. With `OPENLIST_SHOTS_DIR` in the runner's environment
+/// tasks with no time yet, the quiet empty and no-calendar states, the card
+/// folded to one line, and a block's checkbox. With `OPENLIST_SHOTS_DIR` in the runner's environment
 /// (`TEST_RUNNER_OPENLIST_SHOTS_DIR` through xcodebuild) each state is saved
 /// there, in the appearance `OPENLIST_SHOTS_APPEARANCE` names (light unless
 /// it says dark).
@@ -120,7 +120,7 @@ final class TodayScheduleUITests: XCTestCase {
     }
 
     /// Once the day's work is done, the card says nothing else is on, and
-    /// still offers to fit today's tasks.
+    /// still offers to fit today's tasks. Folded, its one line says so.
     @MainActor
     func testNothingElseToday() {
         let app = launch(now: "2026-09-23T21:30:00", route: "working", environment: ["OpenlistReviewMeetings": "none"])
@@ -129,6 +129,52 @@ final class TodayScheduleUITests: XCTestCase {
         XCTAssertFalse(app.buttons["today.schedule.now"].exists)
         XCTAssertTrue(app.buttons["today.fit"].exists)
         snap(app, "today-empty")
+
+        app.buttons["today.schedule.fold"].tap()
+        let summary = app.buttons["today.schedule.summary"]
+        XCTAssertTrue(summary.waitForExistence(timeout: 5))
+        XCTAssertEqual(summary.label, "Nothing else scheduled today.")
+        XCTAssertTrue(app.buttons["today.fit"].waitForNonExistence(timeout: 5), "Folded, the card's notes go")
+        snap(app, "today-empty-folded")
+    }
+
+    /// The chevron folds the card to one line, what's on now and when; it
+    /// stays folded through a relaunch, and a tap on the line opens it
+    /// again. A meeting held online names its service, not its link.
+    @MainActor
+    func testTheCardFoldsToOneLineAndStaysFolded() {
+        // One session for both launches: its store and its preferences.
+        let environment = ["OpenlistReviewMeetings": "links", "OpenlistReviewSession": "UITest-\(UUID().uuidString)"]
+        let app = launch(now: "2026-09-23T13:50:00", environment: environment)
+        let next = app.descendants(matching: .any)["today.schedule.next"]
+        XCTAssertTrue(next.waitForExistence(timeout: 10))
+        XCTAssertEqual(next.label, "Next: Design sync")
+        let detail = next.value as? String ?? ""
+        XCTAssertTrue(detail.hasPrefix("14:00 · in 10 min · Microsoft Teams") && !detail.contains("https:"), detail)
+        let fold = app.buttons["today.schedule.fold"]
+        XCTAssertEqual(fold.label, "Schedule")
+        XCTAssertEqual(fold.value as? String, "Expanded")
+        snap(app, "today-open-online")
+
+        fold.tap()
+        let summary = app.buttons["today.schedule.summary"]
+        XCTAssertTrue(summary.waitForExistence(timeout: 5))
+        XCTAssertEqual(summary.label, "Now: Draft Q3 OKRs")
+        XCTAssertTrue(next.waitForNonExistence(timeout: 5), "Folded, the card shows its first line alone")
+        XCTAssertEqual(fold.value as? String, "Collapsed")
+        snap(app, "today-folded")
+
+        let again = launch(now: "2026-09-23T13:50:00", environment: environment)
+        let kept = again.buttons["today.schedule.summary"]
+        XCTAssertTrue(kept.waitForExistence(timeout: 10), "Folded it stays, through a relaunch")
+        XCTAssertFalse(again.descendants(matching: .any)["today.schedule.next"].exists)
+        snap(again, "today-folded-relaunched")
+
+        kept.tap()
+        XCTAssertTrue(again.descendants(matching: .any)["today.schedule.next"].waitForExistence(timeout: 5))
+        XCTAssertEqual(again.buttons["today.schedule.fold"].value as? String, "Expanded")
+        XCTAssertFalse(kept.exists)
+        snap(again, "today-opened-again")
     }
 
     /// No calendar connected: a quiet line offers Connect. It's never tapped

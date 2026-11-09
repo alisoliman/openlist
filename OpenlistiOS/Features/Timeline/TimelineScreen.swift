@@ -492,7 +492,7 @@ struct TimelineSchedule {
                 : item.isCurrent(at: now) ? .now : schedule.next?.id == item.id ? .next : .none
             if let meeting = item.meeting {
                 items.append(OLTimelineItem(id: "event-\(meeting.id)", kind: .event, title: item.title, start: start, end: end,
-                                            emphasis: emphasis, isPast: item.end <= now, location: meeting.location,
+                                            emphasis: emphasis, isPast: item.end <= now, location: meeting.place,
                                             calendarTitle: meeting.calendarTitle))
                 continue
             }

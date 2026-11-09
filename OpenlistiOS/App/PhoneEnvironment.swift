@@ -120,13 +120,15 @@ final class PhoneEnvironment {
     /// review copies have theirs. For the empty states, `OpenlistReviewMeetings`
     /// in the launch environment says `NO`, for no calendar connected (the
     /// device's own, which a review session never connects), or `none`, for a
-    /// connected calendar with nothing on it. Nil outside review sessions.
+    /// connected calendar with nothing on it; `links` gives the meetings links
+    /// for places, as online meetings have. Nil outside review sessions.
     static func reviewMeetings(defaults: UserDefaults, now: Date,
                                environment: [String: String] = ProcessInfo.processInfo.environment) -> ExternalCalendarSource? {
         guard ReviewSession.identifier != nil else { return nil }
         switch environment["OpenlistReviewMeetings"] {
         case "NO": return nil
         case "none": return ExternalCalendarSource(defaults: defaults, fixtureBusyTimes: [])
+        case "links": return ExternalCalendarSource(defaults: defaults, fixtureBusyTimes: PhoneFixture.meetings(now: now, links: true))
         default: return ExternalCalendarSource(defaults: defaults, fixtureBusyTimes: PhoneFixture.meetings(now: now))
         }
     }

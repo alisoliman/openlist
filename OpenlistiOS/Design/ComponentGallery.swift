@@ -200,6 +200,16 @@ struct ComponentGallery: View {
                     .padding(.horizontal, 16)
                     .padding(.vertical, 4)
             }
+            // Folded to one line, as Today's chevron leaves it.
+            OLNowCard {
+                HStack(spacing: 0) {
+                    OLNowCardSummary(role: .next, title: "Design sync", time: "14:00")
+                    OLNowCardFold(isFolded: true) {}
+                        .padding(.trailing, -14)
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 6)
+            }
             OLListGrid {
                 OLListCard(title: "Weekend in Kyoto", icon: "🗻", accent: .violet, detail: "7 open") {}
                 OLListCard(title: "Home", icon: "🏡", accent: .green, detail: "3 open") {}

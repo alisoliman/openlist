@@ -28,6 +28,9 @@ struct TodaySchedule {
         var taskID: UUID? { block?.taskID }
         /// Running work, which is under way whatever its times say.
         var isActive: Bool { block?.isActive ?? false }
+        /// A meeting's place as its line names it: a link as the service it
+        /// opens (`MeetingPlace`).
+        var place: String? { meeting?.place }
 
         /// Under way at `now`.
         func isCurrent(at now: Date) -> Bool { !isDone && (isActive || (start <= now && now < end)) }
@@ -121,5 +124,135 @@ struct TodaySchedule {
     /// What `hours` shows: anything overlapping them.
     func shown(in hours: ClosedRange<Int>) -> [Item] {
         items.filter { hour($0.end) > Double(hours.lowerBound) && hour($0.start) < Double(hours.upperBound) }
+    }
+}
+
+extension FixedBusyTime {
+    /// Where the meeting is, as Today's lines and a meeting's details name
+    /// it: a link as the service it opens (`MeetingPlace`), a room or an
+    /// address as the calendar has it.
+    var place: String? { location.map(MeetingPlace.name) }
+}
+
+/// A meeting's place as a line names it. A link reads as the service it
+/// opens, "Microsoft Teams", "Zoom" or "Google Meet", and any other link as
+/// its bare domain, so a long address never fills the line; a room or a
+/// street stays as the calendar has it. Where a place gives both, as
+/// "Room 4.12 / https://zoom.us/j/1" does, the room stays and the link is
+/// named after it, unless the words name it already ("Zoom Meeting
+/// https://zoom.us/j/1").
+nonisolated enum MeetingPlace {
+    /// The services meetings are held on, by the domain of their links,
+    /// subdomains included ("us02web.zoom.us").
+    private static let services: [(domain: String, name: String)] = [
+        ("teams.microsoft.com", "Microsoft Teams"), ("teams.live.com", "Microsoft Teams"),
+        ("teams.microsoft.us", "Microsoft Teams"),
+        ("zoom.us", "Zoom"), ("zoom.com", "Zoom"), ("zoomgov.com", "Zoom"),
+        ("meet.google.com", "Google Meet"),
+        ("webex.com", "Webex"),
+        ("gotomeeting.com", "GoTo Meeting"), ("gotomeet.me", "GoTo Meeting"), ("meet.goto.com", "GoTo Meeting"),
+        ("facetime.apple.com", "FaceTime"),
+        ("whereby.com", "Whereby"),
+        ("chime.aws", "Amazon Chime"),
+        ("bluejeans.com", "BlueJeans"),
+        ("skype.com", "Skype"),
+        ("meet.jit.si", "Jitsi Meet"),
+        ("slack.com", "Slack"),
+        ("discord.com", "Discord"), ("discord.gg", "Discord"),
+        ("ringcentral.com", "RingCentral"),
+        ("maps.apple.com", "Apple Maps"),
+        ("maps.google.com", "Google Maps"), ("maps.app.goo.gl", "Google Maps"),
+    ]
+
+    /// What's trimmed from the words left beside a link: "Room 4.12 /".
+    private static let separators = CharacterSet.whitespacesAndNewlines.union(CharacterSet(charactersIn: ":;,|/-–—·•"))
+    /// What's trimmed from around a link: "<https://…>", "(zoom.us/j/1),".
+    private static let wrapping = CharacterSet(charactersIn: "<>()[]{}\"'“”‘’,;.!?")
+
+    /// `location` with each link named: "https://teams.microsoft.com/meet/1"
+    /// reads "Microsoft Teams", "https://www.example.com/events/1"
+    /// "example.com". A place with no link comes back as it is.
+    static func name(_ location: String) -> String {
+        guard location.split(whereSeparator: \.isWhitespace).contains(where: { link($0) != nil }) else { return location }
+        // Each part of the place, as calendars separate them, by the words
+        // beside its links, then their names.
+        var names: [String] = []
+        for part in location.split(whereSeparator: { $0 == ";" || $0.isNewline }) {
+            var words: [Substring] = []
+            var linked: [String] = []
+            for word in part.split(whereSeparator: \.isWhitespace) {
+                if let link = link(word) { linked.append(name(host: link.host, path: link.path)) } else { words.append(word) }
+            }
+            let text = words.joined(separator: " ").trimmingCharacters(in: separators)
+            names += ([text] + linked).filter { !$0.isEmpty }
+        }
+        // A name that another says already goes, as "Microsoft Teams" beside
+        // "Microsoft Teams Meeting" does, and so does a repeat.
+        let kept = names.enumerated().filter { index, name in
+            !names.enumerated().contains { other, wider in
+                other != index && wider.localizedCaseInsensitiveContains(name) && (wider.count > name.count || other < index)
+            }
+        }
+        return kept.map(\.element).joined(separator: ", ")
+    }
+
+    /// The host and path of the link `word` is, if it's one: a link with a
+    /// scheme ("https://…", "zoommtg://…"), or one without that starts
+    /// "www.", goes on to a path ("zoom.us/j/1") or is a service's
+    /// ("meet.google.com"). "4.12", "St.Mary" and an email address aren't.
+    private static func link(_ word: Substring) -> (host: String, path: Substring)? {
+        var rest = Substring(word.trimmingCharacters(in: wrapping))
+        var schemed = false
+        if let separator = rest.range(of: "://") {
+            let scheme = rest[..<separator.lowerBound]
+            guard scheme.first?.isLetter == true,
+                  scheme.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || "+-.".contains($0)) }) else { return nil }
+            rest = rest[separator.upperBound...]
+            schemed = true
+        }
+        let end = rest.firstIndex { "/?#".contains($0) } ?? rest.endIndex
+        var authority = rest[..<end]
+        let path = rest[end...]
+        if let at = authority.lastIndex(of: "@") {
+            guard schemed else { return nil }
+            authority = authority[authority.index(after: at)...]
+        }
+        if let colon = authority.lastIndex(of: ":"), authority[authority.index(after: colon)...].allSatisfy(\.isNumber) {
+            authority = authority[..<colon]
+        }
+        let host = authority.lowercased()
+        if schemed {
+            guard !host.isEmpty, host.allSatisfy({ $0.isLetter || $0.isNumber || $0 == "-" || $0 == "." }) else { return nil }
+            return (host, path)
+        }
+        guard isDomain(host), host.hasPrefix("www.") || !path.isEmpty || service(host) != nil else { return nil }
+        return (host, path)
+    }
+
+    /// A domain name: two labels or more of letters, digits and hyphens, the
+    /// last of two letters or more ("zoom.us", not "4.12").
+    private static func isDomain(_ host: String) -> Bool {
+        let labels = host.split(separator: ".", omittingEmptySubsequences: false)
+        guard labels.count >= 2, let last = labels.last, last.count >= 2,
+              last.allSatisfy({ $0.isASCII && $0.isLetter }) else { return false }
+        return labels.allSatisfy { label in
+            !label.isEmpty && label.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "-") }
+        }
+    }
+
+    /// A link's name: its service's, else its domain without "www.".
+    private static func name(host: String, path: Substring) -> String {
+        if let service = service(host) { return service }
+        // Google Maps' links are on google.com and goo.gl too.
+        if path.hasPrefix("/maps"), isUnder(host, "google.com") || host == "goo.gl" { return "Google Maps" }
+        return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+    }
+
+    private static func service(_ host: String) -> String? {
+        services.first { isUnder(host, $0.domain) }?.name
+    }
+
+    private static func isUnder(_ host: String, _ domain: String) -> Bool {
+        host == domain || host.hasSuffix("." + domain)
     }
 }
