@@ -20,6 +20,15 @@ private enum NXDay {
     static let gutter: CGFloat = 44
     /// Room above the first hour line and below the last for their labels.
     static let labelRoom: CGFloat = 7
+    /// Where the groups' scroll view starts below the header kept in place,
+    /// and how far rows fade as they scroll up to it: both within the 22pt
+    /// the first group leaves above its head, so they show only once the
+    /// groups scroll.
+    static let pageEdge: CGFloat = 10
+    static let pageFade: CGFloat = 10
+    /// The same below now and next, within the 12pt above the hours.
+    static let hoursEdge: CGFloat = 4
+    static let hoursFade: CGFloat = 8
     /// A meeting's details beside the column.
     static let detailsWidth: CGFloat = 248
     /// Sessions' and meetings' 11/1.25 titles and 10/1.3 times over
@@ -40,63 +49,109 @@ private enum NXDay {
 
 // MARK: - Layout
 
-/// Today's task groups with the day's schedule. With room, the schedule is a
-/// column beside the groups, which stay first and widest; while the inspector
-/// is open it gives the inspector that side rather than squeezing the tasks.
-/// Without room, it folds to its now and next lines above the groups, the
-/// day's hours a click away. Which of the two is decided by the room the page
-/// has with no inspector, so opening a task never moves the rows under the
-/// pointer.
-struct NXTodayWithSchedule<Tasks: View>: View {
+/// Today's page: its header, the task groups and the day's schedule. With
+/// room, the schedule is a column beside the groups, which stay first and
+/// widest. The header stays put over both, and each side scrolls on its own:
+/// the groups in the page's scroll view, the schedule's hours under its now
+/// and next lines, so scrolling one never moves the other. While the
+/// inspector is open the column gives the inspector that side rather than
+/// squeezing the tasks. Without room, the page scrolls as one, as other pages
+/// do, with the schedule folded to its now and next lines above the groups
+/// and the day's hours a click away, in a scroll of their own at most a third
+/// of the page tall, so a long day never pushes the tasks out of sight. A
+/// scroll there stays where it started, as on the rest of the Mac: the hours
+/// don't hand it on to the page at their end, and the page scrolling past
+/// them doesn't scroll them. Which of the two layouts is decided by the room
+/// the page has with no inspector, so opening a task never moves the rows
+/// under the pointer.
+struct NXTodayLayout<Header: View, Tasks: View>: View {
+    @Environment(AppEnvironment.self) private var env
+    @Environment(\.nxPageRoom) private var room
+    /// Row IDs in on-screen order, published for j/k and ⌘A.
+    let rowIDs: [UUID]
     let now: Date
     /// Today's tasks with no time on the calendar yet, which the schedule offers to fit.
     let toPlan: [UUID]
-    @ViewBuilder var tasks: () -> Tasks
-    /// The page has room for the column whenever no inspector takes it.
-    @State private var roomy = true
-    /// The column fits beside the tasks as the page is now.
-    @State private var fits = true
+    /// Both built once, so laying the page out again as the window resizes
+    /// draws neither again.
+    let header: Header
+    let tasks: Tasks
+    /// The pointer rests on the folded schedule's hours, which scroll on
+    /// their own above the groups.
+    @State private var onHours = false
 
-    var body: some View {
-        let needs = NXDay.fits
-        VStack(alignment: .leading, spacing: 0) {
-            if !roomy {
-                NXTodaySchedule(now: now, toPlan: toPlan, presentation: .strip)
-                    // A meeting's details can hang over the groups below.
-                    .zIndex(1)
-            }
-            HStack(alignment: .top, spacing: 0) {
-                VStack(alignment: .leading, spacing: 0) { tasks() }
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
-                if roomy && fits {
-                    NXTodaySchedule(now: now, toPlan: toPlan, presentation: .column)
-                        .frame(width: NXDay.column)
-                        .padding(.leading, NXDay.gap)
-                }
-            }
-            .onGeometryChange(for: Bool.self, of: { $0.size.width >= needs }) { fits = $0 }
-        }
-        .background { NXTodayRoom(roomy: $roomy) }
+    init(rowIDs: [UUID], now: Date, toPlan: [UUID], @ViewBuilder header: () -> Header,
+         @ViewBuilder tasks: () -> Tasks) {
+        self.rowIDs = rowIDs
+        self.now = now
+        self.toPlan = toPlan
+        self.header = header()
+        self.tasks = tasks()
     }
-}
-
-/// Says whether the page has room for the schedule column with no inspector
-/// open, counting a sidebar folded away for the inspector's sake as still
-/// there. Only this reads the room, so a live resize redraws nothing else
-/// until the answer changes.
-private struct NXTodayRoom: View {
-    @Environment(AppEnvironment.self) private var env
-    @Environment(\.nxPageRoom) private var room
-    @Binding var roomy: Bool
 
     var body: some View {
         let sidebar: CGFloat = env.workbench.isSidebarFoldedForRoom ? 236 : 0
-        // The page's padded column, at most the reading measure, less its 40pt margins.
-        let width = min(max(0, room - sidebar), NXPageMeasure.reading + 80) - 80
-        Color.clear
-            .onChange(of: width >= NXDay.fits, initial: true) { _, wide in
-                if roomy != wide { roomy = wide }
+        // The page's padded column with no inspector, at most the reading
+        // measure, less its 40pt margins; a sidebar folded away for the
+        // inspector's sake counts as still there.
+        let roomy = min(max(0, room - sidebar), NXPageMeasure.reading + 80) - 80 >= NXDay.fits
+        GeometryReader { page in
+            let column = NXPageMeasure.column(measure: NXPageMeasure.reading + 80, room: room, width: page.size.width)
+            // The column's 40pt margins, and on a wide display the room
+            // either side of it, which each side's scroll view reaches into.
+            let leading = column.x + 40
+            let trailing = page.size.width - column.x - column.width + 40
+            // The schedule fits beside the tasks as the page is now.
+            let beside = roomy && column.width - 80 >= NXDay.fits
+            VStack(alignment: .leading, spacing: 0) {
+                if roomy {
+                    header
+                        .padding(.top, 26)
+                        .padding(.leading, leading)
+                        .padding(.trailing, trailing)
+                }
+                HStack(alignment: .top, spacing: 0) {
+                    NXPageScroll(rowIDs: rowIDs, yields: !roomy && onHours) {
+                        VStack(alignment: .leading, spacing: 0) {
+                            Color.clear.frame(height: 0).id(ContentReveal.Anchor.pageHeader)
+                            if !roomy {
+                                header
+                                NXTodaySchedule(now: now, toPlan: toPlan, presentation: .strip,
+                                                hoursCap: max(3 * NXDay.hourHeight, page.size.height / 3))
+                                    // A meeting's details can hang over the groups below.
+                                    .zIndex(1)
+                            }
+                            VStack(alignment: .leading, spacing: 0) { tasks }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .topLeading)
+                        // Under the header kept in place, as far up as the
+                        // scroll view starts below it and its fade, so the
+                        // rows rest where they would on a page that scrolls
+                        // as one.
+                        .padding(.top, roomy ? -(NXDay.pageEdge + NXDay.pageFade) : 26)
+                        .padding(.leading, leading)
+                        // Beside the schedule, the gap to it, where the
+                        // groups' scroller shows.
+                        .padding(.trailing, beside ? NXDay.gap : trailing)
+                        .padding(.bottom, 120)
+                    }
+                    // Below the header kept in place, rows scrolled up go
+                    // into a fade rather than being cut off. The scroll view
+                    // starts below it, so a row brought into view stops
+                    // there, and its offsets stay plain for Back and Forward.
+                    .scrollClipDisabled(roomy)
+                    .modifier(NXScrollEdgeFade(top: roomy ? NXDay.pageFade : 0, above: true))
+                    .padding(.top, roomy ? NXDay.pageEdge + NXDay.pageFade : 0)
+                    if beside {
+                        NXTodaySchedule(now: now, toPlan: toPlan, presentation: .column)
+                            .frame(width: NXDay.column + trailing)
+                    }
+                }
             }
+            .background { NXPageBackground() }
+            .onPreferenceChange(NXHoursHoldPageKey.self) { onHours = $0 }
+        }
+        .modifier(NXPageEntrance())
     }
 }
 
@@ -109,16 +164,27 @@ private enum NXSchedulePresentation { case column, strip }
 /// differ by form, not colour: a meeting is a quiet grey block, a session a
 /// card with its checkbox in its list's colour, as the Calendar draws it.
 /// It reads what the Calendar draws and plans nothing itself; Plan, Find a
-/// Slot and Fit into calendar show here as they land.
+/// Slot and Fit into calendar show here as they land. Now and next stay put
+/// while the hours scroll on their own, starting an hour before now.
 private struct NXTodaySchedule: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.nextStyle) private var style
+    @Environment(\.nxPageScrolling) private var pageScrolling
     let now: Date
     let toPlan: [UUID]
     let presentation: NXSchedulePresentation
+    /// The tallest the strip's hours get before they scroll.
+    var hoursCap: CGFloat = .infinity
     /// The day's meetings, read again only when the calendars reload.
     @State private var meetings = WidgetSnapshotSources.MeetingCache()
     @State private var connecting = false
+    /// The meeting under the pointer, and the one whose details show once
+    /// the pointer has rested on it.
+    @State private var hoveredID: String?
+    @State private var detailsID: String?
+    /// The strip's hours, unscrolled, once laid out.
+    @State private var hoursHeight: CGFloat?
+    @State private var pointerOnHours = false
 
     /// The folded strip's hours, opened this session.
     private static let dayGroup = "today.schedule.day"
@@ -132,45 +198,164 @@ private struct NXTodaySchedule: View {
         let connected = external.isFixture || external.isAuthorized
         let open = presentation == .column || workbench.collapsedGroups.contains(Self.dayGroup)
         let showsEarlier = workbench.collapsedGroups.contains(Self.earlierGroup)
+        // From an hour before now, or from the start of what's under way.
+        let start = schedule.hours(showsEarlier: false)
         let hours = schedule.hours(showsEarlier: showsEarlier)
-        let earlier = schedule.earlier(than: schedule.hours(showsEarlier: false))
+        let earlier = schedule.earlier(than: start)
         let shown = schedule.shown(in: hours)
         VStack(alignment: .leading, spacing: 0) {
-            head(open: open, collapsible: presentation == .strip && !schedule.isEmpty)
-            if !schedule.holds.isEmpty {
-                holds(schedule.holds)
-            }
-            if schedule.isEmpty {
-                empty(connected: connected, unavailable: external.isConnected && !connected)
-            } else {
-                NXScheduleSummary(schedule: schedule, now: now, sideBySide: presentation == .strip)
-                    .padding(.top, 4)
-                if open {
-                    if !earlier.isEmpty {
-                        earlierToggle(count: earlier.count, shown: showsEarlier)
-                    }
-                    if !shown.isEmpty {
-                        NXScheduleGrid(schedule: schedule, hours: hours, items: shown, now: now,
-                                       details: presentation == .column ? .leading : .bottom)
-                            .padding(.top, earlier.isEmpty ? 12 : 4)
-                            // A meeting's details hang over the lines below it.
-                            .zIndex(1)
-                    }
+            VStack(alignment: .leading, spacing: 0) {
+                head(open: open, collapsible: presentation == .strip && !schedule.isEmpty)
+                if !schedule.holds.isEmpty {
+                    holds(schedule.holds)
                 }
-                if !connected {
+                if schedule.isEmpty {
+                    empty(connected: connected, unavailable: external.isConnected && !connected)
+                } else {
+                    NXScheduleSummary(schedule: schedule, now: now, sideBySide: presentation == .strip)
+                        .padding(.top, 4)
+                }
+            }
+            .frame(width: presentation == .column ? NXDay.column : nil, alignment: .leading)
+            let day = VStack(alignment: .leading, spacing: 0) {
+                if !earlier.isEmpty {
+                    earlierToggle(count: earlier.count, shown: showsEarlier)
+                }
+                if !shown.isEmpty {
+                    NXScheduleGrid(schedule: schedule, hours: hours, start: start.lowerBound, items: shown, now: now,
+                                   hoveredID: $hoveredID)
+                        .padding(.top, earlier.isEmpty ? 12 : 4)
+                }
+            }
+            switch presentation {
+            case .column:
+                // The rest of the day scrolls on its own, under now and next,
+                // to the column's foot.
+                scrolling {
+                    VStack(alignment: .leading, spacing: 0) {
+                        if !schedule.isEmpty {
+                            day
+                            if !connected {
+                                connectLine(unavailable: external.isConnected)
+                            }
+                        }
+                        if !toPlan.isEmpty {
+                            planLine(toPlan)
+                        }
+                    }
+                    .frame(width: NXDay.column, alignment: .topLeading)
+                    .padding(.top, -(NXDay.hoursEdge + NXDay.hoursFade))
+                    // As the page's foot, so the end clears the bottom bars.
+                    .padding(.bottom, 120)
+                }
+                .safeAreaPadding(.top, NXDay.hoursFade)
+                .modifier(NXScrollEdgeFade(top: NXDay.hoursFade))
+                .padding(.top, NXDay.hoursEdge)
+            case .strip:
+                if open && !schedule.isEmpty && !(earlier.isEmpty && shown.isEmpty) {
+                    // Above the groups, a long day scrolls in a part of the
+                    // page rather than pushing the tasks down.
+                    let estimate = CGFloat(hours.upperBound - hours.lowerBound) * NXDay.hourHeight + 40
+                    let height = (hoursHeight ?? estimate) - NXDay.hoursEdge
+                    let capped = height > hoursCap
+                    scrolling {
+                        day.onGeometryChange(for: CGFloat.self, of: \.size.height) { hoursHeight = $0 }
+                            .padding(.top, -(NXDay.hoursEdge + NXDay.hoursFade))
+                    }
+                    .safeAreaPadding(.top, NXDay.hoursFade)
+                    // A day that fits doesn't scroll, so the page does.
+                    .scrollBounceBehavior(.basedOnSize)
+                    // A scroll stays where it started: the hours scroll
+                    // whenever the page holds still for them, and hold still
+                    // while the page scrolls past them.
+                    .environment(\.isScrollEnabled, !pageScrolling)
+                    // Cut off by the cap, the hours fade at their foot too,
+                    // a sign there's more.
+                    .modifier(NXScrollEdgeFade(top: NXDay.hoursFade, bottom: capped ? 2 * NXDay.hoursFade : 0))
+                    .frame(height: min(height, hoursCap))
+                    .onHover { pointerOnHours = $0 }
+                    .onDisappear { pointerOnHours = false }
+                    // Scrolled to their end, they'd hand the scrolling on to
+                    // the page, so it holds still while the pointer rests on
+                    // them.
+                    .preference(key: NXHoursHoldPageKey.self, value: capped && pointerOnHours)
+                    .padding(.top, NXDay.hoursEdge)
+                }
+                if !schedule.isEmpty && !connected {
                     connectLine(unavailable: external.isConnected)
                 }
-            }
-            if !toPlan.isEmpty {
-                planLine(toPlan)
+                if !toPlan.isEmpty {
+                    planLine(toPlan)
+                }
             }
         }
         // Level with the first group's head beside it, or, folded above the
         // groups, as far below the header as they are.
         .padding(.top, 22)
         .padding(.bottom, presentation == .strip ? 6 : 0)
+        .frame(maxHeight: presentation == .column ? .infinity : nil, alignment: .top)
+        // A meeting's details, over the schedule rather than in the hours'
+        // scroll view, which would cut them off.
+        .overlayPreferenceValue(NXMeetingFramesKey.self) { frames in
+            GeometryReader { geo in
+                if let id = detailsID, let frame = frames[id], let meeting = shown.first(where: { $0.id == id })?.meeting {
+                    details(meeting, at: geo[frame], in: geo.size)
+                }
+            }
+        }
+        .task(id: hoveredID) {
+            // The pointer resting on a meeting shows its details, as a
+            // tooltip waits; moving off hides them at once.
+            guard let id = hoveredID else {
+                withAnimation(NX.ease(120)) { detailsID = nil }
+                return
+            }
+            if detailsID != nil {
+                withAnimation(NX.ease(120)) { detailsID = id }
+                return
+            }
+            try? await Task.sleep(for: .milliseconds(350))
+            guard !Task.isCancelled else { return }
+            withAnimation(NX.ease(160)) { detailsID = id }
+        }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Schedule")
+    }
+
+    /// The day's hours in a scroll view of their own, with the system's
+    /// scrollers and bounce. They open on the hour before now, and a
+    /// meeting's details leave as they scroll.
+    private func scrolling<Content: View>(@ViewBuilder content: () -> Content) -> some View {
+        let content = content()
+        return ScrollViewReader { proxy in
+            ScrollView {
+                content
+                    .frame(maxWidth: .infinity, alignment: .topLeading)
+                    .background { NXPageBackground() }
+            }
+            .scrollIndicators(.automatic)
+            .onScrollPhaseChange { _, phase in
+                if phase.isScrolling, hoveredID != nil { hoveredID = nil }
+            }
+            .onAppear {
+                // Once laid out; it's there only with the earlier part shown.
+                Task { @MainActor in proxy.scrollTo(NXScheduleGrid.startID, anchor: .top) }
+            }
+        }
+    }
+
+    /// A meeting's details: beside the column, hanging over the tasks, or
+    /// under the meeting where the hours span the page.
+    private func details(_ meeting: FixedBusyTime, at frame: CGRect, in size: CGSize) -> some View {
+        let leading = presentation == .column
+        return NXMeetingDetails(meeting: meeting, now: now)
+            .frame(width: NXDay.detailsWidth)
+            .fixedSize(horizontal: false, vertical: true)
+            .offset(x: leading ? -(10 + NXDay.detailsWidth)
+                        : max(NXDay.gutter, min(frame.minX, size.width - NXDay.detailsWidth)),
+                    y: leading ? frame.minY - 4 : frame.maxY + 6)
+            .transition(style.slides ? .opacity.combined(with: .offset(x: leading ? 4 : 0, y: leading ? 0 : -4)) : .opacity)
+            .allowsHitTesting(false)
     }
 
     private func makeSchedule() -> TodaySchedule {
@@ -512,14 +697,16 @@ private struct NXScheduleGrid: View {
     @Environment(\.displayScale) private var displayScale
     let schedule: TodaySchedule
     let hours: ClosedRange<Int>
+    /// The hour the day opens on, an hour before now, which the hours scroll
+    /// to when they show earlier ones too.
+    let start: Int
     let items: [TodaySchedule.Item]
     let now: Date
-    /// Where a meeting's details show: beside the column, or under the
-    /// meeting where the hours span the page.
-    let details: Edge
-    /// The meeting whose details show, once the pointer has rested on it.
-    @State private var detailsID: String?
-    @State private var hoveredID: String?
+    /// The meeting under the pointer, whose details the schedule shows.
+    @Binding var hoveredID: String?
+
+    /// The hour the day opens on, as the hours' scroll view knows it.
+    static let startID = "today.schedule.start"
 
     private var height: CGFloat { CGFloat(hours.upperBound - hours.lowerBound) * NXDay.hourHeight }
 
@@ -570,22 +757,6 @@ private struct NXScheduleGrid: View {
                     }
                 }
                 .frame(width: geo.size.width, height: height, alignment: .topLeading)
-                // Over the grid, never part of its layout.
-                .overlay(alignment: .topLeading) {
-                    if let id = detailsID, let item = items.first(where: { $0.id == id }), let meeting = item.meeting,
-                       let slot = item.layoutID.flatMap({ layout[$0] }) {
-                        NXMeetingDetails(meeting: meeting, now: now)
-                            .frame(width: NXDay.detailsWidth)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .offset(x: details == .leading ? -(NXDay.gutter + 10 + NXDay.detailsWidth)
-                                        : max(0, min(x(slot, geo.size.width), geo.size.width - NXDay.detailsWidth)),
-                                    y: details == .leading ? slot.top - 4 : slot.top + slot.height + 6)
-                            .transition(style.slides ? .opacity.combined(with: .offset(x: details == .leading ? 4 : 0,
-                                                                                         y: details == .leading ? 0 : -4))
-                                                     : .opacity)
-                            .allowsHitTesting(false)
-                    }
-                }
                 // Blocks that move, as a replan or a plan moves them, glide
                 // there; with Reduce Motion they're simply there.
                 .animation(style.slides ? style.ease(320) : nil,
@@ -593,22 +764,20 @@ private struct NXScheduleGrid: View {
             }
             .frame(height: height)
         }
-        .padding(.vertical, NXDay.labelRoom)
-        .task(id: hoveredID) {
-            // The pointer resting on a meeting shows its details, as a
-            // tooltip waits; moving off hides them at once.
-            guard let id = hoveredID else {
-                withAnimation(NX.ease(120)) { detailsID = nil }
-                return
+        // Above the start hour's line, room for its label, for the scroll
+        // view to open on, below its fade: laid out there, as scrolling to
+        // it goes by the frame of the view that has the id.
+        .background(alignment: .topLeading) {
+            if start > hours.lowerBound {
+                VStack(spacing: 0) {
+                    Color.clear.frame(width: 1, height: max(0, CGFloat(start - hours.lowerBound) * NXDay.hourHeight
+                                                                - NXDay.labelRoom - 1))
+                    Color.clear.frame(width: 1, height: 1).id(Self.startID)
+                }
+                .accessibilityHidden(true)
             }
-            if detailsID != nil {
-                withAnimation(NX.ease(120)) { detailsID = id }
-                return
-            }
-            try? await Task.sleep(for: .milliseconds(350))
-            guard !Task.isCancelled else { return }
-            withAnimation(NX.ease(160)) { detailsID = id }
         }
+        .padding(.vertical, NXDay.labelRoom)
     }
 
     @ViewBuilder
@@ -619,6 +788,7 @@ private struct NXScheduleGrid: View {
                 .onHover { inside in
                     if inside { hoveredID = item.id } else if hoveredID == item.id { hoveredID = nil }
                 }
+                .anchorPreference(key: NXMeetingFramesKey.self, value: .bounds) { [item.id: $0] }
         } else if let block = item.block {
             NXScheduleSession(block: block, title: item.title, height: height, width: width, now: now, emphasis: emphasis)
         }
@@ -672,6 +842,46 @@ private struct NXScheduleGrid: View {
 private extension TodaySchedule.Item {
     /// The id the Calendar's lanes know it by.
     var layoutID: String? { meeting?.id ?? block?.id }
+}
+
+/// Content scrolling under what stays put above a scroll view fades out over
+/// `top` points rather than being cut off; `bottom` fades its foot the same
+/// way. Both lie within the room the content leaves at rest, so they show
+/// only once it scrolls. `above` puts the top fade just over the scroll
+/// view, on content it doesn't clip, and the mask clips the rest.
+private struct NXScrollEdgeFade: ViewModifier {
+    var top: CGFloat = 0
+    var bottom: CGFloat = 0
+    var above = false
+
+    func body(content: Content) -> some View {
+        // Always masked, so a fade coming or going never replaces the
+        // scroll view and loses its place.
+        content.mask {
+            VStack(spacing: 0) {
+                LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom).frame(height: top)
+                Color.black
+                LinearGradient(colors: [.black, .clear], startPoint: .top, endPoint: .bottom).frame(height: bottom)
+            }
+            .padding(.top, above ? -top : 0)
+        }
+    }
+}
+
+/// The pointer rests on the folded schedule's hours while they scroll on
+/// their own, so the page holds still for them.
+private struct NXHoursHoldPageKey: PreferenceKey {
+    static let defaultValue = false
+    static func reduce(value: inout Bool, nextValue: () -> Bool) { value = value || nextValue() }
+}
+
+/// Where each meeting on the hours is, so its details can show over the
+/// schedule, out of the hours' scroll view.
+private struct NXMeetingFramesKey: PreferenceKey {
+    static let defaultValue: [String: Anchor<CGRect>] = [:]
+    static func reduce(value: inout [String: Anchor<CGRect>], nextValue: () -> [String: Anchor<CGRect>]) {
+        value.merge(nextValue()) { _, new in new }
+    }
 }
 
 /// What's under way, what comes next, and the rest, drawn heavier to lighter.

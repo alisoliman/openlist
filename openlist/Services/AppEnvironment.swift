@@ -220,12 +220,15 @@ final class AppEnvironment {
     /// review session has its fixture's, never the Mac's own calendars. For
     /// the empty states, OpenlistReviewMeetings in the copy's Info.plist can
     /// say NO, for no calendar connected, or "none", for a connected calendar
-    /// with nothing on it. Nil outside review sessions.
+    /// with nothing on it; "long" gives a day of meetings from early morning
+    /// to late evening. Nil outside review sessions.
     private static func reviewMeetings() -> ExternalCalendarSource? {
         guard ReviewSession.identifier != nil else { return nil }
         switch Bundle.main.object(forInfoDictionaryKey: "OpenlistReviewMeetings") {
         case let on as Bool where !on: return nil
         case let value as String where value == "none": return ExternalCalendarSource(fixtureBusyTimes: [])
+        case let value as String where value == "long":
+            return ExternalCalendarSource(fixtureBusyTimes: SampleData.longDayMeetings(now: .now))
         default: return ExternalCalendarSource(fixtureBusyTimes: SampleData.meetings(now: .now))
         }
     }

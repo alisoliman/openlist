@@ -340,20 +340,58 @@ private struct NXNoRows: ViewModifier {
 /// width beside the sidebar and inspector up to a reading measure, past which
 /// the column is centred so a row's chips stay in reach of its title on a
 /// wide display (Calendar, Lists and Activity use every point; see
-/// `NXReadingColumn`), a click-to-clear background, scroll-to-focus,
-/// scrolling to what a search hit or link reveals in a list document, and,
-/// as a native extra, the place Back and Forward return it to.
+/// `NXReadingColumn`), and what `NXPageScroll` does.
 struct NXPage<Content: View>: View {
-    @Environment(AppEnvironment.self) private var env
-    @Environment(\.nextStyle) private var style
     /// The widest the column gets; nil fills the page.
     var measure: CGFloat? = NXPageMeasure.reading
     /// Row IDs in on-screen order, published for j/k and ⌘A.
     var rowIDs: [UUID] = []
     @ViewBuilder var content: () -> Content
-    @State private var appeared = false
+
+    var body: some View {
+        NXPageScroll(rowIDs: rowIDs) {
+            NXReadingColumnView(measure: measure.map { $0 + 80 }) {
+                VStack(alignment: .leading, spacing: 0) {
+                    Color.clear.frame(height: 0).id(ContentReveal.Anchor.pageHeader)
+                    content()
+                }
+                .frame(maxWidth: .infinity, alignment: .topLeading)
+                .padding(.top, 26)
+                .padding(.horizontal, 40)
+                .padding(.bottom, 120)
+            }
+            .modifier(NXPageEntrance())
+        }
+    }
+}
+
+/// A page's scroll view and what it does: a click-to-clear background,
+/// scroll-to-focus, scrolling to what a search hit or link reveals in a list
+/// document, and, as a native extra, the place Back and Forward return it
+/// to. `NXPage` scrolls its column in it; Today scrolls its task groups in
+/// it, beside a schedule that scrolls on its own.
+struct NXPageScroll<Content: View>: View {
+    @Environment(AppEnvironment.self) private var env
+    @Environment(\.nextStyle) private var style
+    /// Row IDs in on-screen order, published for j/k and ⌘A.
+    let rowIDs: [UUID]
+    /// The pointer rests on a part of the page that scrolls on its own, so
+    /// the page holds still unless it's already scrolling: the part's own
+    /// scrolling never runs on into the page's, as a scroll view in a
+    /// scroll view doesn't elsewhere on the Mac.
+    let yields: Bool
+    /// Built once, so a page that lays it out again as the window resizes
+    /// doesn't draw it again.
+    let content: Content
     /// The reveal whose note card has laid out, so the page can scroll to it.
     @State private var visibleNoteRevealID: UUID?
+    @State private var scrolling = false
+
+    init(rowIDs: [UUID] = [], yields: Bool = false, @ViewBuilder content: () -> Content) {
+        self.rowIDs = rowIDs
+        self.yields = yields
+        self.content = content()
+    }
 
     /// A reveal in the list on show, the Inbox too, once search has stepped
     /// aside. Tasks reveal in the inspector instead.
@@ -367,25 +405,15 @@ struct NXPage<Content: View>: View {
         let workbench = env.workbench
         ScrollViewReader { proxy in
             ScrollView {
-                NXReadingColumnView(measure: measure.map { $0 + 80 }) {
-                    VStack(alignment: .leading, spacing: 0) {
-                        Color.clear.frame(height: 0).id(ContentReveal.Anchor.pageHeader)
-                        content()
-                    }
-                    .frame(maxWidth: .infinity, alignment: .topLeading)
-                    .padding(.top, 26)
-                    .padding(.horizontal, 40)
-                    .padding(.bottom, 120)
-                }
-                .offset(y: appeared ? 0 : 6)
-                .opacity(appeared ? 1 : 0)
-                .background {
-                    Color.clear.contentShape(Rectangle()).onTapGesture { clearBackground() }
-                }
+                content
+                    .background { NXPageBackground() }
+                    .environment(\.nxPageScrolling, scrolling)
             }
             .scrollIndicators(.automatic)
+            .scrollDisabled(yields && !scrolling)
+            .onScrollPhaseChange { _, phase in scrolling = phase.isScrolling }
             .modifier(NXScrollRestoration(revealing: readyRevealID != nil))
-            .background { Color.clear.contentShape(Rectangle()).onTapGesture { clearBackground() } }
+            .background { NXPageBackground() }
             .onChange(of: workbench.focusID) { _, id in
                 guard let id, rowIDs.contains(id) else { return }
                 withAnimation(style.ease(180)) { proxy.scrollTo(id) }
@@ -426,13 +454,33 @@ struct NXPage<Content: View>: View {
                 proxy.scrollTo(ContentReveal.Anchor.blockNote(id), anchor: .center)
             }
         }
-        .onAppear {
-            workbench.visibleIDs = rowIDs
-            withAnimation(style.ease(260)) { appeared = true }
-        }
+        .onAppear { workbench.visibleIDs = rowIDs }
+    }
+}
+
+/// A page's entrance: up 6pt and in, over 260ms.
+struct NXPageEntrance: ViewModifier {
+    @Environment(\.nextStyle) private var style
+    @State private var appeared = false
+
+    func body(content: Content) -> some View {
+        content
+            .offset(y: appeared ? 0 : 6)
+            .opacity(appeared ? 1 : 0)
+            .onAppear { withAnimation(style.ease(260)) { appeared = true } }
+    }
+}
+
+/// A page's background, where a click clears the focus and the field being
+/// edited, and closes the task open in the inspector.
+struct NXPageBackground: View {
+    @Environment(AppEnvironment.self) private var env
+
+    var body: some View {
+        Color.clear.contentShape(Rectangle()).onTapGesture(perform: clear)
     }
 
-    private func clearBackground() {
+    private func clear() {
         let workbench = env.workbench
         workbench.focusID = nil
         workbench.tasksQueryFocused = false
@@ -444,6 +492,19 @@ struct NXPage<Content: View>: View {
 enum NXPageMeasure {
     /// Wide enough that a window of the design's size never reaches it.
     static let reading: CGFloat = 1120
+    /// The narrowest a column gets before it gives up its centring: 640pt
+    /// of rows inside the page's 40pt margins.
+    nonisolated static let readable: CGFloat = 720
+
+    /// Where `NXReadingColumn` lays a column out in a page `width` wide that
+    /// has `room` with no inspector: centred in the room at most `measure`
+    /// wide, and moved left only to keep a readable width.
+    nonisolated static func column(measure: CGFloat?, room: CGFloat, width: CGFloat) -> (x: CGFloat, width: CGFloat) {
+        guard let measure else { return (0, width) }
+        let centred = max(0, (max(room, width) - measure) / 2)
+        let x = min(centred, max(0, width - min(measure, readable)))
+        return (x, max(0, min(measure, width - x)))
+    }
 }
 
 /// The window's width, for the page's reading column.
@@ -492,6 +553,11 @@ extension EnvironmentValues {
         get { self[NXPageRoomKey.self] }
         set { self[NXPageRoomKey.self] = newValue }
     }
+
+    /// The page is scrolling, so a part of it that scrolls on its own holds
+    /// still meanwhile: a scroll stays with the scroll view it started in,
+    /// as it does elsewhere on the Mac.
+    @Entry var nxPageScrolling = false
 }
 
 /// Lays the page's padded column out at most `measure` wide, centred in the
@@ -502,9 +568,6 @@ extension EnvironmentValues {
 private struct NXReadingColumn: Layout {
     let measure: CGFloat?
     let room: CGFloat
-    /// The narrowest the column gets before it gives up its centring: 640pt
-    /// of rows inside the page's 40pt margins.
-    private static let readable: CGFloat = 720
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
         guard let child = subviews.first else { return .zero }
@@ -522,10 +585,7 @@ private struct NXReadingColumn: Layout {
     }
 
     private func column(in width: CGFloat) -> (x: CGFloat, width: CGFloat) {
-        guard let measure else { return (0, width) }
-        let centred = max(0, (max(room, width) - measure) / 2)
-        let x = min(centred, max(0, width - min(measure, Self.readable)))
-        return (x, max(0, min(measure, width - x)))
+        NXPageMeasure.column(measure: measure, room: room, width: width)
     }
 }
 
