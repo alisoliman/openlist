@@ -191,9 +191,9 @@ struct OLNowCardLine: View {
     /// A session's list colour, a dot before its detail; nil for a meeting.
     var listColor: Color?
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-
-    /// The label column, which titles line up after.
-    static let labelWidth: CGFloat = 46
+    /// The label column, which titles line up after: 46 pt at the default
+    /// size, growing with the caps' text so "NEXT" never breaks in two.
+    @ScaledMetric(relativeTo: .caption2) private var labelWidth: CGFloat = 46
 
     var body: some View {
         Group {
@@ -204,7 +204,7 @@ struct OLNowCardLine: View {
                 }
             } else {
                 HStack(alignment: .firstTextBaseline, spacing: 0) {
-                    label.frame(width: Self.labelWidth, alignment: .leading)
+                    label.fixedSize().frame(width: labelWidth, alignment: .leading)
                     text
                 }
             }

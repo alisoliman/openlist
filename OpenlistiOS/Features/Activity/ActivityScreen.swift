@@ -193,25 +193,49 @@ private struct ActivityGrid: View {
 
     var body: some View {
         let days = heatmap.days
-        HStack(spacing: Self.gap) {
-            ForEach(0..<12, id: \.self) { week in
-                VStack(spacing: Self.gap) {
-                    ForEach(0..<7, id: \.self) { row in
-                        let index = week * 7 + row
-                        if index < days.count { cell(days[index]) } else { upcoming(row) }
+        VStack(spacing: 0) {
+            HStack(spacing: Self.gap) {
+                ForEach(0..<12, id: \.self) { week in
+                    VStack(spacing: Self.gap) {
+                        ForEach(0..<7, id: \.self) { row in
+                            let index = week * 7 + row
+                            if index < days.count { cell(days[index]) } else { upcoming(row) }
+                        }
                     }
                 }
             }
+            .padding(.top, Self.inset.height)
+            .padding(.bottom, 10)
+            .padding(.horizontal, Self.inset.width)
+            .contentShape(.rect)
+            .onTapGesture { pickDay(nearest: $0) }
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+            legend
+                .padding(.horizontal, Self.inset.width)
+                .padding(.bottom, Self.inset.height)
         }
-        .padding(.vertical, Self.inset.height)
-        .padding(.horizontal, Self.inset.width)
-        .contentShape(.rect)
-        .onTapGesture { pickDay(nearest: $0) }
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
         .olCard()
         .olFeedback(.selection, trigger: selection)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Completions by day")
+    }
+
+    /// What the shades mean, as the Mac's heatmap says it: "Fewer", the five
+    /// bands, "More". Out of VoiceOver's way, as each day says its count.
+    private var legend: some View {
+        HStack(spacing: 4) {
+            Spacer(minLength: 0)
+            Text("Fewer").padding(.trailing, 2)
+            ForEach(0..<5, id: \.self) { level in
+                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                    .fill(OL.heat(level))
+                    .frame(width: 11, height: 11)
+            }
+            Text("More").padding(.leading, 2)
+        }
+        .font(OLFont.meta)
+        .foregroundStyle(OL.muted)
+        .accessibilityHidden(true)
     }
 
     /// A day of this week still to come: nothing drawn, "Friday, upcoming".

@@ -348,7 +348,7 @@ struct NXInspectorPlanOptions: View {
             }
         }
         .padding(.top, 9)
-        .overlay(alignment: .top) { Rectangle().fill(NX.ink(0.07)).frame(height: 0.5) }
+        .overlay(alignment: .top) { NXHairline(NX.ink(0.07)) }
     }
 
     private func toggle(_ title: String, isOn: Bool, action: @escaping () -> Void) -> some View {
@@ -413,6 +413,10 @@ struct NXInspectorSubtasks: View {
                     .animation(NX.cssEase(400), value: fraction)
                 }
                 .frame(height: 3)
+                // No track until there's a subtask to count: an empty bar
+                // reads as progress on nothing. Its room stays, so the
+                // first subtask doesn't shift the heading.
+                .opacity(rows.isEmpty ? 0 : 1)
             }
             .padding(.bottom, 6)
             ForEach(rows) { row in

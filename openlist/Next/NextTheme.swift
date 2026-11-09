@@ -148,6 +148,44 @@ enum NX {
     }
 }
 
+// MARK: - Hairlines
+
+/// A rule one device pixel thick: half a point on a Retina display and a
+/// whole point on a 1x one, where a half-point line falls between pixels and
+/// fades to nothing, as the calendar's hour lines and the toolbar's foot did.
+struct NXHairline: View {
+    let color: Color
+    var axis: Axis = .horizontal
+    @Environment(\.displayScale) private var displayScale
+
+    init(_ color: Color, axis: Axis = .horizontal) {
+        self.color = color
+        self.axis = axis
+    }
+
+    var body: some View {
+        let thickness = 1 / displayScale
+        Rectangle().fill(color)
+            .frame(width: axis == .vertical ? thickness : nil, height: axis == .horizontal ? thickness : nil)
+    }
+}
+
+/// A shape's border one device pixel thick, as `NXHairline` draws a rule.
+struct NXHairlineBorder<S: InsettableShape>: View {
+    let shape: S
+    let color: Color
+    @Environment(\.displayScale) private var displayScale
+
+    init(_ shape: S, _ color: Color) {
+        self.shape = shape
+        self.color = color
+    }
+
+    var body: some View {
+        shape.strokeBorder(color, lineWidth: 1 / displayScale)
+    }
+}
+
 /// Per-window style resolved from settings and the system reduce-motion flag.
 struct NextStyle: Equatable {
     /// The accent the settings choose. It marks only the caret and focus,

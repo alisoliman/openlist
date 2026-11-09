@@ -199,7 +199,7 @@ private struct NXListCard: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(NX.card)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(NX.ink(hovering ? 0.14 : 0.12), lineWidth: 0.5))
+        .overlay(NXHairlineBorder(RoundedRectangle(cornerRadius: 14, style: .continuous), NX.ink(hovering ? 0.14 : 0.12)))
         .shadow(color: NX.shadowWarm.opacity(hovering ? 0.1 : 0.04), radius: hovering ? 14 : 3, y: hovering ? 12 : 2)
         .offset(y: hovering ? -2 : 0)
         // The design's 200ms lift, whatever the Motion setting.

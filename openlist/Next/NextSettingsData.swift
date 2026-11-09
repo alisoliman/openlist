@@ -308,7 +308,7 @@ private struct LibraryRestorePreview: View {
             .padding(.horizontal, 14)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(NX.inspector, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(NX.ink(0.08), lineWidth: 0.5))
+            .overlay(NXHairlineBorder(RoundedRectangle(cornerRadius: 10, style: .continuous), NX.ink(0.08)))
             Text("This replaces the library shown on this Mac with a local-only restored copy. It does not replace, reset or merge your iCloud library. Your original library and a recovery backup are kept.")
                 .font(.system(size: 13))
                 .foregroundStyle(NX.textSecondary)

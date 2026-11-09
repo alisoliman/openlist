@@ -42,7 +42,7 @@ struct ListAppearancePicker: View {
                 }
                 NXEmojiField { env.workbench.setAppearance(icon: $0, for: list) }
             }
-            Rectangle().fill(NX.ink(0.07)).frame(height: 0.5)
+            NXHairline(NX.ink(0.07))
                 .padding(.vertical, 2)
             NXCapsTitle(text: "Colour")
             HStack(spacing: 2) {

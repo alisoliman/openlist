@@ -1719,11 +1719,4 @@ enum TasksGroupingMode: String, CaseIterable, Identifiable {
         case .none: "nothing"
         }
     }
-    var next: TasksGroupingMode {
-        switch self {
-        case .list: .due
-        case .due: .none
-        case .none: .list
-        }
-    }
 }

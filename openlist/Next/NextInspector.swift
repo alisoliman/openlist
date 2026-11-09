@@ -248,7 +248,7 @@ struct NextInspector: View {
                 topBar
                     .padding(.vertical, 9)
                     .padding(.horizontal, 12)
-                    .overlay(alignment: .bottom) { Rectangle().fill(NX.ink(0.07)).frame(height: 0.5) }
+                    .overlay(alignment: .bottom) { NXHairline(NX.ink(0.07)) }
             }
 
             ScrollViewReader { proxy in
@@ -280,7 +280,7 @@ struct NextInspector: View {
 
             column { footer }
                 .padding(.vertical, 10)
-                .overlay(alignment: .top) { Rectangle().fill(NX.ink(0.07)).frame(height: 0.5) }
+                .overlay(alignment: .top) { NXHairline(NX.ink(0.07)) }
         }
         .frame(width: isPage ? nil : panelWidth)
         .frame(maxWidth: isPage ? .infinity : nil, maxHeight: .infinity)
@@ -304,7 +304,7 @@ struct NextInspector: View {
         // over it, by an edge that drags to resize it.
         .overlay(alignment: .leading) {
             if !isPage {
-                Rectangle().fill(NX.ink(0.1)).frame(width: 0.5)
+                NXHairline(NX.ink(0.1), axis: .vertical)
                 NXDetailsResizeEdge()
             }
         }
@@ -393,7 +393,7 @@ struct NextInspector: View {
                 detailsLine
                 TaskReminderStatus(block: task, attentionOnly: true)
             }
-            Rectangle().fill(NX.ink(0.07)).frame(height: 0.5)
+            NXHairline(NX.ink(0.07))
                 .padding(.top, isPage ? 20 : 16)
             // The note and every section after it share one column: on the
             // page, the note's reading measure, so their rules, toggles and

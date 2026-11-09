@@ -182,7 +182,7 @@ extension View {
     func nxOverlayCard() -> some View {
         background(NX.card)
             .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(NX.ink(0.18), lineWidth: 0.5))
+            .overlay(NXHairlineBorder(RoundedRectangle(cornerRadius: 14, style: .continuous), NX.ink(0.18)))
             .shadow(color: Color(hex: 0x17161A, opacity: 0.3), radius: 35, y: 30)
     }
 }
@@ -355,7 +355,7 @@ struct NXCaptureCard<Draft: NXCaptureDraft>: View {
             destinations
                 .padding(.vertical, 10)
                 .background(NX.ink(0.02))
-                .overlay(alignment: .top) { Rectangle().fill(NX.ink(0.08)).frame(height: 0.5) }
+                .overlay(alignment: .top) { NXHairline(NX.ink(0.08)) }
         }
         .frame(maxWidth: 600)
         .onChange(of: draft.captureText) {
@@ -1108,7 +1108,7 @@ private struct NXSearchCard: View {
             }
             .padding(.vertical, 14)
             .padding(.horizontal, 16)
-            .overlay(alignment: .bottom) { Rectangle().fill(NX.ink(0.08)).frame(height: 0.5) }
+            .overlay(alignment: .bottom) { NXHairline(NX.ink(0.08)) }
 
             NXOverlayList {
                 ForEach(Array(hits.enumerated()), id: \.element.id) { offset, hit in
@@ -1458,7 +1458,7 @@ private struct NXPaletteCard: View {
             }
             .padding(.vertical, 14)
             .padding(.horizontal, 16)
-            .overlay(alignment: .bottom) { Rectangle().fill(NX.ink(0.08)).frame(height: 0.5) }
+            .overlay(alignment: .bottom) { NXHairline(NX.ink(0.08)) }
 
             NXOverlayList {
                 ForEach(Array(commands.enumerated()), id: \.element.id) { offset, command in

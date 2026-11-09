@@ -379,10 +379,10 @@ struct OLLinkRow: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 8) {
-                if let count {
-                    Text("\(count)").contentTransition(.numericText())
-                }
-                Text(title)
+                // The count and its words one line, a word space apart, as a
+                // fold's "1 done" is, not set apart ("4  without a date").
+                Text(count.map { "\($0) \(title)" } ?? title)
+                    .contentTransition(.numericText())
                 Spacer(minLength: 0)
                 Image(systemName: "chevron.right")
                     .font(.system(size: 14, weight: .semibold))

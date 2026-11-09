@@ -118,7 +118,7 @@ struct NextSidebar: View {
         }
         .frame(width: 236)
         .background(NX.sidebar)
-        .overlay(alignment: .trailing) { Rectangle().fill(NX.ink(0.09)).frame(width: 0.5) }
+        .overlay(alignment: .trailing) { NXHairline(NX.ink(0.09), axis: .vertical) }
     }
 
     // MARK: Search
@@ -496,7 +496,7 @@ struct NextSidebar: View {
         }
         .padding(.vertical, 6)
         .padding(.horizontal, 8)
-        .overlay(alignment: .top) { Rectangle().fill(NX.ink(0.09)).frame(height: 0.5) }
+        .overlay(alignment: .top) { NXHairline(NX.ink(0.09)) }
     }
 
     /// An icon button; `title` is what VoiceOver reads.

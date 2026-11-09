@@ -158,11 +158,13 @@ struct ShortcutsSheet: View {
                 .padding(.horizontal, 22)
                 .padding(.top, 14)
                 .padding(.bottom, 14)
-                .overlay(alignment: .bottom) { Rectangle().fill(NX.ink(0.07)).frame(height: 0.5) }
+                .overlay(alignment: .bottom) { NXHairline(NX.ink(0.07)) }
 
             ScrollView {
+                // Each group starts at the top of its row, rather than centred
+                // beside a longer one with a gap above it.
                 LazyVGrid(
-                    columns: [GridItem(.adaptive(minimum: 260, maximum: 360), spacing: 22)],
+                    columns: [GridItem(.adaptive(minimum: 260, maximum: 360), spacing: 22, alignment: .top)],
                     alignment: .leading,
                     spacing: 22
                 ) {

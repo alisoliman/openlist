@@ -288,7 +288,7 @@ private struct NXCalendarBody: View {
         .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
         .background(NX.card)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(NX.ink(0.12), lineWidth: 0.5))
+        .overlay(NXHairlineBorder(RoundedRectangle(cornerRadius: 12, style: .continuous), NX.ink(0.12)))
         // A new hour range re-lays the grid at once, as the design's range
         // re-renders, whatever change brought it.
         .transaction(value: range) { $0.animation = nil }
@@ -315,7 +315,7 @@ private struct NXCalendarBody: View {
                               open: dates.count > 1 ? { showDay(date) } : nil)
                 }
             }
-            .overlay(alignment: .bottom) { Rectangle().fill(NX.ink(0.09)).frame(height: 0.5) }
+            .overlay(alignment: .bottom) { NXHairline(NX.ink(0.09)) }
             HStack(alignment: .top, spacing: 0) {
                 NXHourGutter(range: range, now: now, showsNow: dates.contains { cal.isDate($0, inSameDayAs: now) })
                     .frame(width: NXCal.gutter, height: height)
@@ -442,7 +442,7 @@ private struct NXDayHead: View {
         .frame(minWidth: NXCal.minColumn, maxWidth: .infinity, alignment: .leading)
         .background(open != nil && hovering ? NX.ink(0.035) : .clear)
         .animation(NX.cssEase(hovering ? 60 : 140), value: hovering)
-        .overlay(alignment: .leading) { Rectangle().fill(NX.ink(0.07)).frame(width: 0.5) }
+        .overlay(alignment: .leading) { NXHairline(NX.ink(0.07), axis: .vertical) }
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .onTapGesture { open?() }
@@ -476,8 +476,10 @@ private struct NXHourGutter: View {
     let showsNow: Bool
 
     var body: some View {
+        let nowY = showsNow ? NXDayColumn.offset(of: now, range: range) : nil
         ZStack(alignment: .topTrailing) {
             ForEach(Array(range.dropFirst().dropLast()), id: \.self) { hour in
+                let y = CGFloat(hour - range.lowerBound) * NXCal.hourHeight
                 // The design's 500 10/1 box (SF Mono has SF's line), so the
                 // label sits where the design's top puts it on its hour line.
                 Text(String(format: "%02d:00", hour))
@@ -485,9 +487,11 @@ private struct NXHourGutter: View {
                     .foregroundStyle(NX.textTertiary)
                     .padding(.vertical, (10 - NX.lineHeight(10)) / 2)
                     .padding(.trailing, 8)
-                    .offset(y: CGFloat(hour - range.lowerBound) * NXCal.hourHeight - 6)
+                    .offset(y: y - 6)
+                    // A label the now pill sits on gives way to it, as on Today.
+                    .opacity(nowY.map { abs($0 - y) < 14 } == true ? 0 : 1)
             }
-            if showsNow, let y = NXDayColumn.offset(of: now, range: range) {
+            if let y = nowY {
                 // 600 9.5/1 in its 2pt padding: the design's 13.5pt pill.
                 Text(NXFormat.clock(now))
                     .font(NX.mono(9.5, weight: .semibold))
@@ -508,6 +512,7 @@ private struct NXHourGutter: View {
 private struct NXDayColumn: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(NXCalendarDrag.self) private var drag
+    @Environment(\.displayScale) private var displayScale
     let date: Date
     let now: Date
     let range: ClosedRange<Int>
@@ -540,9 +545,9 @@ private struct NXDayColumn: View {
             ZStack(alignment: .topLeading) {
                 (weekend ? NX.ink(0.015) : Color.clear)
                 ForEach(1..<(range.upperBound - range.lowerBound), id: \.self) { index in
-                    Rectangle().fill(NX.ink(0.06))
-                        .frame(height: 0.5)
-                        .offset(y: CGFloat(index) * NXCal.hourHeight - 0.5)
+                    // Just above the hour, on whole pixels, so a 1x screen shows it too.
+                    NXHairline(NX.ink(0.06))
+                        .offset(y: CGFloat(index) * NXCal.hourHeight - 1 / displayScale)
                 }
                 ForEach(Array(breaks.enumerated()), id: \.offset) { _, window in
                     NXHatch()
@@ -564,6 +569,7 @@ private struct NXDayColumn: View {
                         eventView(event)
                             .frame(width: width(slot, geo.size.width), height: slot.height)
                             .offset(x: x(slot, geo.size.width), y: slot.top)
+                            .zIndex(1)
                     }
                 }
                 ForEach(blocks) { block in
@@ -586,13 +592,16 @@ private struct NXDayColumn: View {
 
                 if isToday, let y = Self.offset(of: now, range: range) {
                     // From the time down, as the design's: the line starts where
-                    // today's shading ends, its dot 0.5pt above its middle.
+                    // today's shading ends. It runs between the day's meetings
+                    // and sessions, not through their words, as Today's
+                    // schedule's does; its dot, 0.5pt above its middle, stays on top.
                     Rectangle().fill(NX.red)
                         .frame(height: 2)
-                        .overlay(alignment: .leading) {
-                            Circle().fill(NX.red).frame(width: 8, height: 8).offset(x: -4, y: -0.5)
-                        }
                         .offset(y: y)
+                        .allowsHitTesting(false)
+                        .zIndex(0.5)
+                    Circle().fill(NX.red).frame(width: 8, height: 8)
+                        .offset(x: -4, y: y - 3.5)
                         .allowsHitTesting(false)
                         .zIndex(5)
                 }
@@ -603,7 +612,7 @@ private struct NXDayColumn: View {
             // The design's 420ms top and height, whatever the Motion setting.
             .animation(NX.ease(420), value: layout.mapValues { [$0.top, $0.height, Double($0.lane), Double($0.laneCount)] })
         }
-        .overlay(alignment: .leading) { Rectangle().fill(NX.ink(0.07)).frame(width: 0.5) }
+        .overlay(alignment: .leading) { NXHairline(NX.ink(0.07), axis: .vertical) }
         .onDrop(of: [NXCalendarDrag.type], delegate: NXDayDrop(date: date, range: range, drag: drag, workbench: env.workbench,
                                                                session: env.navigator.blockDragSessionID))
     }
@@ -659,6 +668,8 @@ private struct NXDayColumn: View {
         // No taller than its slot, so what overflows is cut at the bottom.
         .frame(maxWidth: .infinity, minHeight: 0, maxHeight: .infinity, alignment: .topLeading)
         .background(NX.ink(0.06), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+        // Solid, so the now line passes under it.
+        .background(NX.card, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
         .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
         .help(event.title)
         .accessibilityElement(children: .ignore)
@@ -825,6 +836,8 @@ private struct NXCalendarBlock: View {
         // instead of the block growing past its hours.
         .frame(maxWidth: .infinity, minHeight: 0, maxHeight: .infinity, alignment: .topLeading)
         .background(background, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+        // Solid under a done or missed block's tint, so the now line passes under it.
+        .background(NX.card, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
         // The design's inset ring, which a missed block's border keeps inside
         // it: a solid line within the dashes, the fill showing between them.
         .overlay(RoundedRectangle(cornerRadius: missed ? 6 : 7, style: .continuous)
@@ -981,8 +994,8 @@ private struct NXCardHover: ViewModifier {
 
     func body(content: Content) -> some View {
         content
-            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .strokeBorder(NX.ink(hovering ? 0.1 : 0), lineWidth: 0.5))
+            .overlay(NXHairlineBorder(RoundedRectangle(cornerRadius: 10, style: .continuous),
+                NX.ink(hovering ? 0.1 : 0)))
             .shadow(color: NX.shadowWarm.opacity(hovering ? 0.09 : 0), radius: 6, y: 3)
             .animation(NX.cssEase(hovering ? 80 : 160), value: hovering)
             .onHover { hovering = $0 }
@@ -1119,7 +1132,7 @@ private struct NXUnplannedColumn: View {
         .padding(.vertical, 10)
         .padding(.horizontal, 11)
         .background(NX.card, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(NX.ink(0.12), lineWidth: 0.5))
+        .overlay(NXHairlineBorder(RoundedRectangle(cornerRadius: 10, style: .continuous), NX.ink(0.12)))
         .modifier(NXCardHover())
         // Its row focused for the keys, or inspected, as a block's is.
         .overlay {

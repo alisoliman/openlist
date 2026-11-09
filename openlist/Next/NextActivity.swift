@@ -142,6 +142,19 @@ private enum NXHeat {
         default: return accent
         }
     }
+
+    /// A count's colour on its band: the accent's own words on the two
+    /// strongest, which are mostly accent, and the ink on the middle one, so
+    /// it reads on every shade in either appearance. White on the neutral
+    /// accent's dark-mode bands, which are light, couldn't be read. The
+    /// faintest keep `faint`.
+    @MainActor static func words(_ count: Int, style: NextStyle, faint: Color) -> Color {
+        switch ActivityBand.level(count) {
+        case 3...: style.onAccent
+        case 2: NX.ink
+        default: faint
+        }
+    }
 }
 
 private struct NXHeatmapCard: View {
@@ -198,7 +211,7 @@ private struct NXHeatmapCard: View {
                 ForEach([(0, "0"), (1, "1"), (2, "2–3"), (5, "4–6"), (8, "7+")], id: \.0) { count, label in
                     Text(label)
                         .font(.system(size: 9, weight: .semibold))
-                        .foregroundStyle(count >= 4 ? .white : NX.textTertiary)
+                        .foregroundStyle(NXHeat.words(count, style: style, faint: NX.textTertiary))
                         .padding(.horizontal, 4)
                         .frame(minWidth: 22, minHeight: 16)
                         .background(NXHeat.band(count, accent: style.accent), in: RoundedRectangle(cornerRadius: 4, style: .continuous))
@@ -216,7 +229,7 @@ private struct NXHeatmapCard: View {
         .padding(.horizontal, 20)
         .fixedSize()
         .background(NX.card, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(NX.ink(0.12), lineWidth: 0.5))
+        .overlay(NXHairlineBorder(RoundedRectangle(cornerRadius: 14, style: .continuous), NX.ink(0.12)))
     }
 
     private var summary: String {
@@ -224,7 +237,9 @@ private struct NXHeatmapCard: View {
         // The whole history's streak, which the widget shows too, not a
         // count clipped to the weeks on screen.
         let streak = heatmap.streak
-        return "\(total) \(total == 1 ? "completion" : "completions") · \(streak)-day streak"
+        let completions = "\(total) \(total == 1 ? "completion" : "completions")"
+        // No "0-day streak": the streak shows once there is one, as on the iPhone.
+        return streak > 0 ? "\(completions) · \(streak)-day streak" : completions
     }
 
     /// The arrows on the grid: the day picked moves a day up or down its
@@ -244,16 +259,25 @@ private struct NXHeatmapCard: View {
         return symbols[(calendar.firstWeekday - 1 + row) % 7]
     }
 
-    /// A month name over the first week of the range and each week a new month starts in.
+    /// A month name over the first week of the range and each week a new
+    /// month starts in. The first week's gives way to a month that starts the
+    /// week after, whose name it would run into ("Aug Sep").
     private func monthLabel(week: Int) -> String {
         let calendar = heatmap.calendar
         guard let start = calendar.date(byAdding: .day, value: week * 7, to: heatmap.start),
               let end = calendar.date(byAdding: .day, value: 6, to: start) else { return "" }
-        let startsMonth = calendar.component(.month, from: start) != calendar.component(.month, from: end)
-            || calendar.component(.day, from: start) == 1
-        guard week == 0 || startsMonth else { return "" }
+        guard week == 0 ? !startsMonth(week: 1) : startsMonth(week: week) else { return "" }
         let month = calendar.component(.day, from: end) < 7 ? end : start
         return month.formatted(.dateTime.month(.abbreviated))
+    }
+
+    /// Whether a month starts in the week: its first day, or a day after it.
+    private func startsMonth(week: Int) -> Bool {
+        let calendar = heatmap.calendar
+        guard let start = calendar.date(byAdding: .day, value: week * 7, to: heatmap.start),
+              let end = calendar.date(byAdding: .day, value: 6, to: start) else { return false }
+        return calendar.component(.month, from: start) != calendar.component(.month, from: end)
+            || calendar.component(.day, from: start) == 1
     }
 }
 
@@ -273,7 +297,7 @@ private struct NXHeatCell: View {
         Text(count.map { $0 > 0 ? "\($0)" : "" } ?? "")
             .font(.system(size: 10.5, weight: .semibold))
             .monospacedDigit()
-            .foregroundStyle((count ?? 0) >= 4 ? .white : NX.textSecondary)
+            .foregroundStyle(NXHeat.words(count ?? 0, style: style, faint: NX.textSecondary))
             .frame(width: NXHeat.cell, height: NXHeat.cell)
             .background(NXHeat.band(count, accent: style.accent), in: shape)
             .overlay {
@@ -365,7 +389,7 @@ private struct NXActivityDayPanel: View {
                     // The design's 0.5pt top border takes its own half point,
                     // so the row is its 30.75pt.
                     .padding(.top, 0.5)
-                    .overlay(alignment: .top) { Rectangle().fill(NX.ink(0.06)).frame(height: 0.5) }
+                    .overlay(alignment: .top) { NXHairline(NX.ink(0.06)) }
                     .contentShape(Rectangle())
                     // One element, which opens the task while it's there.
                     .accessibilityElement(children: .ignore)
@@ -380,7 +404,7 @@ private struct NXActivityDayPanel: View {
         .padding(.vertical, 16)
         .padding(.horizontal, 18)
         .background(NX.inspector, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).strokeBorder(NX.ink(0.08), lineWidth: 0.5))
+        .overlay(NXHairlineBorder(RoundedRectangle(cornerRadius: 14, style: .continuous), NX.ink(0.08)))
         // The design's fadeIn plays once, as the screen opens, at its own
         // speed whatever the Motion setting; a day picked after that changes
         // the panel in place.

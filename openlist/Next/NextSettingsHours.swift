@@ -79,7 +79,7 @@ struct NXHoursEditor: View {
                 .transition(.opacity)
             }
         }
-        .overlay(alignment: .top) { Rectangle().fill(NX.ink(0.06)).frame(height: 0.5) }
+        .overlay(alignment: .top) { NXHairline(NX.ink(0.06)) }
     }
 
     private func override(_ item: AvailabilityOverride) -> some View {
@@ -102,7 +102,7 @@ struct NXHoursEditor: View {
             }
         }
         .padding(.vertical, 8)
-        .overlay(alignment: .top) { Rectangle().fill(NX.ink(0.06)).frame(height: 0.5) }
+        .overlay(alignment: .top) { NXHairline(NX.ink(0.06)) }
     }
 
     private func weekly(_ weekday: Int, breaks: Bool) -> Binding<[AvailabilityWindow]> {
@@ -184,7 +184,7 @@ private struct NXOverrideEditor: View {
             }
         }
         .padding(.vertical, 10)
-        .overlay(alignment: .top) { Rectangle().fill(NX.ink(0.06)).frame(height: 0.5) }
+        .overlay(alignment: .top) { NXHairline(NX.ink(0.06)) }
         // Return saves and Escape cancels.
         .background { NXEditorKeys(onReturn: save, onEscape: cancel) }
     }

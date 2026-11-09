@@ -103,7 +103,7 @@ struct CalendarHistoryView: View {
     }
 
     private var hairline: some View {
-        Rectangle().fill(NX.ink(0.07)).frame(height: 0.5)
+        NXHairline(NX.ink(0.07))
     }
 }
 

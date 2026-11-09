@@ -80,7 +80,7 @@ struct TemplateCopySheet: View {
                         .accessibilityIdentifier("template-keep-recurrence")
                         .padding(.trailing, 14)
                 }
-                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(NX.ink(0.12), lineWidth: 0.5))
+                .overlay(NXHairlineBorder(RoundedRectangle(cornerRadius: 12, style: .continuous), NX.ink(0.12)))
             }
             if let error {
                 NXSheetError(error)

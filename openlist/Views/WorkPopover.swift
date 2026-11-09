@@ -83,7 +83,7 @@ struct WorkPopover: View {
             }
 
             if let summary = env.calendar.rescheduleSummary {
-                Rectangle().fill(NX.ink(0.08)).frame(height: 0.5)
+                NXHairline(NX.ink(0.08))
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Image(systemName: "calendar.badge.clock").font(.system(size: 11.5)).foregroundStyle(NX.ink(0.45))
                     VStack(alignment: .leading, spacing: 3) {

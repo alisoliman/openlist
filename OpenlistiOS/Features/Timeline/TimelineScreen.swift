@@ -52,7 +52,7 @@ private struct TimelinePage: View {
                 OLEyebrow(OLFormat.eyebrowDate(now, calendar: calendar))
             } trailing: {
                 if forWork {
-                    OLIconButton("gearshape", label: "Settings", kind: .plain) { navigator.open(.settings) }
+                    OLIconButton("gearshape", label: "Settings", kind: .bare, iconSize: 22) { navigator.open(.settings) }
                 } else {
                 OLViewToggle(selection: .calendar, from: navigator.todaySwitchedFrom == .list ? .list : nil,
                              listIdentifier: "timeline.list", arrived: { _ = navigator.takeTodaySwitch() }) { _ in

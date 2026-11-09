@@ -759,9 +759,7 @@ private struct NXDocumentBlock: View {
     private func content(editing: Bool) -> some View {
         switch block.kind {
         case .divider:
-            Rectangle()
-                .fill(NX.ink(0.1))
-                .frame(height: 0.5)
+            NXHairline(NX.ink(0.1))
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 10)
         case .image:
@@ -836,7 +834,7 @@ private struct NXDocumentImage: View {
                     .aspectRatio(contentMode: .fit)
                     .frame(maxWidth: width, alignment: .leading)
                     .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous).strokeBorder(NX.ink(0.1), lineWidth: 0.5))
+                    .overlay(NXHairlineBorder(RoundedRectangle(cornerRadius: 11, style: .continuous), NX.ink(0.1)))
             } else if let aspectRatio, key != nil, loaded?.key != key {
                 // Its own shape while it's decoded, so nothing below moves as it appears.
                 RoundedRectangle(cornerRadius: 11, style: .continuous)

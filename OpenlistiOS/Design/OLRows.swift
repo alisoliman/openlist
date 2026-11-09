@@ -99,20 +99,32 @@ struct OLSettingsRow<Trailing: View>: View {
             if let tile { tile }
             if let dot { OLLabelDot(color: dot, size: 8) }
             if dynamicTypeSize.isAccessibilitySize {
-                VStack(alignment: .leading, spacing: 8) {
-                    titleLabel
-                    trailing
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                stacked(spacing: 8)
             } else {
-                titleLabel
-                trailing
+                // A value too long to sit beside its title goes under it,
+                // whole, rather than cut short ("Review before…").
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 12) {
+                        titleLabel
+                        trailing
+                    }
+                    stacked(spacing: 2)
+                }
             }
         }
         .padding(.vertical, 10)
         .padding(.horizontal, 16)
         .frame(minHeight: 52)
         .overlay(alignment: .top) { OLSeparatorLine(separator: separator) }
+    }
+
+    /// The value under the title, as at the accessibility sizes.
+    private func stacked(spacing: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: spacing) {
+            titleLabel
+            trailing
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var titleLabel: some View {
