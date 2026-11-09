@@ -8,8 +8,8 @@ import SwiftUI
 
 /// Sits the window's traffic lights on the 52pt bar the way the design draws
 /// them: centred on its midline, the first one 20pt in from the edge. AppKit
-/// lays the title bar out again on resizes, zooms and full-screen changes, so
-/// the lights are put back whenever it moves them.
+/// lays the title bar out again on resizes, zooms, full-screen changes and
+/// new titles, so the lights are put back whenever it moves them.
 @Observable @MainActor
 final class NXWindowChrome {
     static let barHeight: CGFloat = 52
@@ -24,8 +24,11 @@ final class NXWindowChrome {
     private(set) var isFullScreen = false
     @ObservationIgnored private weak var window: NSWindow?
     @ObservationIgnored private var observers: [NSObjectProtocol] = []
+    @ObservationIgnored private var titleObservation: NSKeyValueObservation?
     /// Moving the buttons reports their frames changing; this ignores our own moves.
     @ObservationIgnored private var isPlacing = false
+    /// A pass is waiting for AppKit to finish moving the buttons.
+    @ObservationIgnored private var isPlaceQueued = false
     /// The system's distance between the buttons, read before the first move.
     @ObservationIgnored private var spacing: CGFloat?
     /// The title bar container being watched; full screen can hand back a new one.
@@ -35,6 +38,7 @@ final class NXWindowChrome {
         guard window !== self.window else { return }
         observers.forEach(NotificationCenter.default.removeObserver)
         observers = []
+        titleObservation = nil
         watchedContainer = nil
         self.window = window
         guard let window else { return }
@@ -47,6 +51,11 @@ final class NXWindowChrome {
         }
         // AppKit resets the buttons' frames in its own layout passes, not only on resize.
         buttons(of: window).forEach(watchFrame)
+        // A new title, which the crumb sets on every route, lays the title bar
+        // out again; this hears of it once that's done, in time for the frame.
+        titleObservation = window.observe(\.title) { [weak self] _, _ in
+            MainActor.assumeIsolated { self?.place() }
+        }
         place()
     }
 
@@ -97,6 +106,7 @@ final class NXWindowChrome {
         if container.frame != bar { container.frame = bar }
         // Keep the system's spacing; move the group and centre it on the bar.
         let windowHeight = frameView.bounds.height
+        var isDropped = false
         for (index, button) in buttons.enumerated() {
             guard let parent = button.superview else { continue }
             let size = button.frame.size
@@ -104,10 +114,27 @@ final class NXWindowChrome {
                                  y: windowHeight - Self.barHeight / 2)
             let local = parent.convert(centre, from: nil)
             let origin = NSPoint(x: (local.x - size.width / 2).rounded(), y: (local.y - size.height / 2).rounded())
-            if button.frame.origin != origin { button.setFrameOrigin(origin) }
+            guard button.frame.origin != origin else { continue }
+            button.setFrameOrigin(origin)
+            // While AppKit moves a button, the button ignores any other move,
+            // and this pass may be running inside that move.
+            if button.frame.origin != origin { isDropped = true }
         }
+        guard !isDropped else { return placeAfterAppKit() }
         let edge = (buttons[2].convert(buttons[2].bounds, to: nil).maxX).rounded(.up)
         if edge != trailingEdge { trailingEdge = edge }
+    }
+
+    /// Places the lights again once AppKit has finished moving them. AppKit
+    /// moves them one by one, so the last one it moves keeps its place till
+    /// then. Clears only after that pass, so a dropped move can't loop.
+    private func placeAfterAppKit() {
+        guard !isPlaceQueued else { return }
+        isPlaceQueued = true
+        DispatchQueue.main.async { [weak self] in
+            self?.place()
+            self?.isPlaceQueued = false
+        }
     }
 }
 
