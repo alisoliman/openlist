@@ -148,70 +148,137 @@ struct OLListHeaderBand<TopBar: View>: View {
 
 // MARK: - C27 Now card
 
-/// Today's Now card: "Now · 10:00", the task, "50 min left", and a play
-/// button. The whole card opens Working; the button starts the work, resumes
-/// it, or goes back to it while it runs.
-struct OLNowCard: View {
-    enum State: Equatable {
-        /// Planned for now and not started: play.
-        case planned
-        /// Recording: the button opens Working.
-        case working
-        /// Paused: "Paused" in grey, the button resumes.
-        case paused
-    }
+/// Today's Now card (the Mac's schedule summary): what's on now and what
+/// comes next, meetings and planned sessions alike, as `OLNowCardLine`s, then
+/// quiet notes (`OLNowNote`) with a light way on. The lines say it; the
+/// card adds no title of its own.
+struct OLNowCard<Content: View>: View {
+    @ViewBuilder var content: Content
 
-    let eyebrow: String
-    let title: String
-    let detail: String
-    var state: State = .planned
-    let open: () -> Void
-    let play: () -> Void
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    init(@ViewBuilder content: () -> Content) { self.content = content() }
 
     var body: some View {
-        // The tile and the card's padding are the open target's too; the
-        // play button keeps its own.
-        HStack(spacing: 12) {
-            Button(action: open) {
-                HStack(spacing: 12) {
-                    if !dynamicTypeSize.isAccessibilitySize {
-                        Image(systemName: state == .paused ? "pause.fill" : "play.fill")
-                        .font(.system(size: 15, weight: .semibold))
-                        .foregroundStyle(OL.ink)
-                        .frame(width: 42, height: 48)
-                        .background(OL.sunken, in: .rect(cornerRadius: 12))
-                        .accessibilityHidden(true)
-                    }
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text(state == .paused ? "Paused" : eyebrow)
-                            .font(OLFont.meta.weight(.semibold))
-                            .foregroundStyle(state == .paused ? OL.muted : OL.accentText)
-                        Text(title)
-                            .font(OLFont.rowTitleStrong)
-                            .foregroundStyle(OL.ink)
-                            .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
-                            .multilineTextAlignment(.leading)
-                        Text(detail)
-                            .font(OLFont.meta)
-                            .foregroundStyle(OL.muted)
-                            .contentTransition(.numericText(countsDown: true))
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                }
-                .padding(.vertical, 14)
-                .padding(.leading, 16)
-                .contentShape(.rect)
-            }
-            .buttonStyle(OLRowPressStyle())
-            .accessibilityElement(children: .combine)
-            .accessibilityHint("Opens Working")
-            OLIconButton("play.fill",
-                         label: state == .working ? "Open Working" : state == .paused ? "Resume" : "Start working",
-                         kind: .accent, iconSize: 16, action: play)
+        VStack(alignment: .leading, spacing: 0) { content }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .olCard()
+    }
+}
+
+/// Where a line of the Now card stands in the day.
+enum OLNowRole: Equatable {
+    case now
+    /// Under way too, beside the first: no label of its own.
+    case alsoNow
+    case next
+
+    var label: String {
+        switch self {
+        case .now: "Now"
+        case .alsoNow: ""
+        case .next: "Next"
         }
-        .padding(.trailing, 14)
-        .olCard()
+    }
+}
+
+/// One line of the Now card: "NOW" or "NEXT" in a small column, the title,
+/// and under it the time and place, a session's list marked by its colour.
+/// What's on now is a step heavier than what comes next. VoiceOver reads it
+/// as one: "Now: Draft Q3 OKRs", then its detail.
+struct OLNowCardLine: View {
+    let role: OLNowRole
+    let title: String
+    let detail: String
+    /// A session's list colour, a dot before its detail; nil for a meeting.
+    var listColor: Color?
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    /// The label column, which titles line up after.
+    static let labelWidth: CGFloat = 46
+
+    var body: some View {
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 4) {
+                    if !role.label.isEmpty { label }
+                    text
+                }
+            } else {
+                HStack(alignment: .firstTextBaseline, spacing: 0) {
+                    label.frame(width: Self.labelWidth, alignment: .leading)
+                    text
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        .padding(.vertical, 6)
+        .contentShape(.rect)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(role == .alsoNow ? "Also now: \(title)" : "\(role.label): \(title)")
+        .accessibilityValue(detail)
+    }
+
+    private var label: some View {
+        Text(role.label)
+            .olCaps()
+            .foregroundStyle(OL.muted)
+    }
+
+    private var text: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+                .font(OLFont.rowTitle.weight(role == .next ? .medium : .semibold))
+                .foregroundStyle(OL.ink)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+                .multilineTextAlignment(.leading)
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                if let listColor {
+                    Circle().fill(listColor)
+                        .frame(width: 7, height: 7)
+                        .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 3.5 }
+                }
+                Text(detail)
+                    .font(OLFont.meta)
+                    .monospacedDigit()
+                    .foregroundStyle(OL.muted)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                    .contentTransition(.numericText(countsDown: true))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+/// A quiet note under the Now card's lines, with one small button: "4 tasks
+/// have no time yet · Fit", "No calendar connected · Connect".
+struct OLNowNote: View {
+    let text: String
+    let actionTitle: String
+    /// The button's identifier, for UI tests.
+    var identifier: String?
+    let action: () -> Void
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    init(_ text: String, actionTitle: String, identifier: String? = nil, action: @escaping () -> Void) {
+        self.text = text
+        self.actionTitle = actionTitle
+        self.identifier = identifier
+        self.action = action
+    }
+
+    var body: some View {
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8)) : AnyLayout(HStackLayout(spacing: 10))
+        layout {
+            Text(text)
+                .font(OLFont.meta)
+                .foregroundStyle(OL.muted)
+                .contentTransition(.numericText())
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button(actionTitle, action: action)
+                .buttonStyle(.ol(.neutral, size: .small))
+                .accessibilityIdentifier(identifier ?? "")
+        }
+        .frame(minHeight: 44)
     }
 }
 

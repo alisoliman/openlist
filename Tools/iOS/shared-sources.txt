@@ -131,6 +131,8 @@ OpenlistiOS openlist Services/WidgetSnapshotPublisher.swift
 OpenlistiOS openlist Editor/OutlinePolicy.swift
 OpenlistiOS openlist Next/NextFormat.swift
 OpenlistiOS openlist Next/Workbench+TaskFields.swift
+OpenlistiOS openlist Views/CalendarOverlapLayout.swift
+OpenlistiOS openlist Views/TodaySchedule.swift
 OpenlistiOS openlist Openlist.icon
 OpenlistiOS openlist OpenlistDev.icon
 OpenlistiOSWidget OpenlistWidget Intents/ListWidgetIntent.swift

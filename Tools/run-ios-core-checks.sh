@@ -13,8 +13,9 @@ cd "$(dirname "$0")/.."
 python3 -B Tools/add-ios-targets.py --check
 SHARED=$( { python3 -B Tools/ios-sources.py OpenlistiOS --shared; python3 -B Tools/ios-sources.py OpenlistiOSWidget --shared; } | sort -u)
 # Foundation-only helpers that live beside the Mac UI; anything else from
-# these folders is Mac UI and must stay out of iOS.
-PORTABLE='^openlist/(Editor/OutlinePolicy|Next/NextFormat|Next/Workbench\+TaskFields)\.swift$'
+# these folders is Mac UI and must stay out of iOS. Today's schedule and the
+# calendar's lanes are pure models both platforms' screens draw.
+PORTABLE='^openlist/(Editor/OutlinePolicy|Next/NextFormat|Next/Workbench\+TaskFields|Views/TodaySchedule|Views/CalendarOverlapLayout)\.swift$'
 UI=$(grep -E '^openlist/(Next|Views|Editor)/' <<<"$SHARED" | grep -Ev "$PORTABLE" || true)
 if [[ -n "$UI" ]]; then
     printf 'The iOS targets must not compile Mac UI files:\n%s\n' "$UI" >&2

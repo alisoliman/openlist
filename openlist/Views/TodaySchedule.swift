@@ -50,12 +50,15 @@ struct TodaySchedule {
     /// - Parameters:
     ///   - blocks: the blocks the Calendar draws (`visibleBlocks`), any days.
     ///   - busy: the calendars' busy time, any days.
+    ///   - day: the day to read, when not the day of `now`, as the iPhone's
+    ///     Timeline reads the other days of its week. Now and next stay
+    ///     `now`'s: a day gone by has neither, a day to come its first item next.
     ///   - title: a session's title, its task's as the Calendar names it.
     ///   - isDone: whether a session is done, as the Calendar draws it.
-    init(blocks: [PlannedBlock], busy: [FixedBusyTime], now: Date, calendar: Calendar = .current,
+    init(blocks: [PlannedBlock], busy: [FixedBusyTime], now: Date, day: Date? = nil, calendar: Calendar = .current,
          title: (PlannedBlock) -> String = { $0.titleSnapshot ?? "Task" },
          isDone: (PlannedBlock) -> Bool = \.isCompleted) {
-        let day = calendar.startOfDay(for: now)
+        let day = calendar.startOfDay(for: day ?? now)
         let end = calendar.date(byAdding: .day, value: 1, to: day) ?? day.addingTimeInterval(86_400)
         func overlaps(_ start: Date, _ finish: Date) -> Bool { finish > day && start < end }
         let meetings = busy.filter { overlaps($0.start, $0.end) && !$0.isAllDayHold }.map {

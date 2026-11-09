@@ -34,6 +34,8 @@ private struct TimelinePage: View {
     @Environment(\.phoneLibrary) private var library
     @Environment(\.dynamicTypeSize) private var typeSize
     @State private var planning = TimelinePlanning()
+    /// The day's meetings, read again only when the calendars reload.
+    @State private var meetings = WidgetSnapshotSources.MeetingCache()
 
     var body: some View {
         // At accessibility sizes the page scrolls, and the card is a fixed
@@ -44,7 +46,7 @@ private struct TimelinePage: View {
         let calendar = env.settings.calendar
         let today = calendar.startOfDay(for: now)
         let day = forWork ? today : navigator.timelineDay.map { calendar.startOfDay(for: $0) } ?? today
-        let schedule = TimelineSchedule(env: env, library: library, day: day, now: now)
+        let schedule = TimelineSchedule(env: env, library: library, day: day, now: now, meetings: meetings)
         OLScreen(identifier: forWork ? PhoneRoute.work.screenIdentifier : PhoneRoute.timeline.screenIdentifier, scrolls: !fills) {
             OLTopBar {
                 OLEyebrow(OLFormat.eyebrowDate(now, calendar: calendar))
@@ -61,12 +63,11 @@ private struct TimelinePage: View {
         } content: {
             OLHeader(forWork ? "Work" : "Today")
             if forWork {
-                let work = PhoneWork(env: env, now: now)
-                if let card = work.card {
-                    OLNowCard(eyebrow: card.eyebrow, title: card.title, detail: card.detail, state: card.state,
-                              open: { navigator.open(.working) }, play: { work.play(env) })
-                        .padding(.top, OLMetrics.headerGap)
-                }
+                // Today's Now card, its lines alone: the timeline under it
+                // plans the rest.
+                TodayScheduleCard(schedule: PhoneSchedule.make(env: env, now: now, meetings: meetings),
+                                  work: PhoneWork(env: env, now: now), now: now, showsNotes: false)
+                    .padding(.top, OLMetrics.headerGap)
             }
             if !forWork {
             OLWeekStrip(days: OLWeekStrip.week(containing: day, calendar: calendar),
@@ -319,6 +320,7 @@ private struct TimelineCard: View {
     let planning: TimelinePlanning
     let open: (OLTimelineItem) -> Void
     @Environment(PhoneEnvironment.self) private var env
+    @Environment(\.openURL) private var openURL
 
     private let hourHeight: CGFloat = 44
 
@@ -329,10 +331,11 @@ private struct TimelineCard: View {
         let takesDrops = day >= today
         ScrollView {
             OLTimeline(items: schedule.items, hours: schedule.hours, now: day == today ? now : nil,
-                       hourHeight: hourHeight, calendar: calendar, day: day, ghost: ghost(calendar: calendar),
+                       hourHeight: hourHeight, calendar: calendar, day: day, moment: now, ghost: ghost(calendar: calendar),
                        dragging: planning.landing == nil ? nil : planning.lifted?.id,
                        drag: takesDrops ? { lift($0) } : nil, nudge: takesDrops ? { nudge($0, by: $1) } : nil,
-                       unplace: takesDrops ? { unplace($0) } : nil, open: open)
+                       unplace: takesDrops ? { unplace($0) } : nil, check: { complete($0) },
+                       openMeeting: { item in PhoneSchedule.calendarApp(at: item.start).map { openURL($0) } }, open: open)
         }
         .scrollIndicators(.hidden)
         .scrollPosition($planning.position)
@@ -396,6 +399,12 @@ private struct TimelineCard: View {
         env.actions.unplace(task)
     }
 
+    /// A block's checkbox: ticks its task, with the tray's Undo, as a row's does.
+    private func complete(_ item: OLTimelineItem) {
+        guard let id = item.taskID, let task = env.store.block(id: id) else { return }
+        env.actions.complete([task])
+    }
+
     /// Places the lifted task where it was shown landing, else at the
     /// drop's point; a drag this card never saw lift carries its task's ID.
     private func drop(at point: CGPoint, providers: [NSItemProvider]) -> Bool {
@@ -447,20 +456,25 @@ private struct TimelineDrop: DropDelegate {
     func performDrop(info: DropInfo) -> Bool { drop(info.location, info.itemProviders(for: [PlanDrag.type])) }
 }
 
-/// The picked day as the timeline draws it.
+/// The picked day as the timeline draws it, from the Mac's model of the
+/// day (`TodaySchedule`, through `PhoneSchedule`): its meetings and its
+/// task sessions, today's under way and next a step heavier, and the tasks
+/// due at a time with no slot.
 @MainActor
 struct TimelineSchedule {
     var items: [OLTimelineItem] = []
     /// The whole day.
     var hours: ClosedRange<Int> = 0...24
-    /// The hour the card opens on: one before now today, else one before
-    /// the day's first block, else 08:00.
+    /// The hour the card opens on: today, the first hour the Mac's Today
+    /// draws (an hour before now, or the start of what's under way); else
+    /// one before the day's first block, else 08:00.
     var scrollHour = 8
     /// The day's tasks with no place on it: no slot and no time to be due at.
     var toPlan: [Block] = []
     var title = "Schedule"
 
-    init(env: PhoneEnvironment, library: NextLibrary, day: Date, now: Date) {
+    init(env: PhoneEnvironment, library: NextLibrary, day: Date, now: Date,
+         meetings: WidgetSnapshotSources.MeetingCache? = nil) {
         let dates = env.settings.calendar
         let coordinator = env.calendar
         let isToday = dates.isDate(day, inSameDayAs: now)
@@ -468,41 +482,50 @@ struct TimelineSchedule {
         let span = DateInterval(start: day, end: next)
         if !isToday { title = CompactText.day(day, now: now, calendar: dates) }
         let work = PhoneWork(env: env, now: now)
+        let schedule = PhoneSchedule.make(env: env, now: now, day: day, meetings: meetings)
 
         var slotted: Set<UUID> = []
-        for block in coordinator.visibleBlocks where block.end > span.start && block.start < span.end {
+        for item in schedule.items {
+            // Something across midnight draws its part of this day.
+            let start = max(item.start, span.start), end = min(item.end, span.end)
+            let emphasis: OLTimelineItem.Emphasis = !isToday ? .none
+                : item.isCurrent(at: now) ? .now : schedule.next?.id == item.id ? .next : .none
+            if let meeting = item.meeting {
+                items.append(OLTimelineItem(id: "event-\(meeting.id)", kind: .event, title: item.title, start: start, end: end,
+                                            emphasis: emphasis, isPast: item.end <= now, location: meeting.location,
+                                            calendarTitle: meeting.calendarTitle))
+                continue
+            }
+            guard let block = item.block else { continue }
             let task = env.store.block(id: block.taskID)
-            let title = task?.displayTitle ?? block.titleSnapshot ?? "Task"
-            let done = block.isCompleted || task?.isCompleted == true || env.actions.isClosing(block.taskID)
             let kind: OLTimelineItem.Kind
             var detail: String?
-            if done {
+            if item.isDone {
                 kind = .done
             } else if block.isActive || block.id == coordinator.pausedBlockID {
                 kind = .working
                 detail = "\(work.state == .paused ? "Paused" : "Now") · \(work.leftText)"
+            } else if block.end <= now {
+                kind = .missed
             } else {
                 kind = .planned
-                detail = "\(Int(block.durationMinutes.rounded()))m"
+                if emphasis == .now { detail = "\(OLFormat.span(OLFormat.minutes(from: now, to: block.end))) left" }
             }
-            if !done { slotted.insert(block.taskID) }
-            // A slot across midnight draws its part of this day. The work in
-            // hand's slots stay put while it runs or waits to resume.
-            items.append(OLTimelineItem(id: block.id, kind: kind, title: title,
-                                        start: max(block.start, span.start), end: min(block.end, span.end),
+            if !item.isDone { slotted.insert(block.taskID) }
+            // The work in hand's slots stay put while it runs or waits to resume.
+            let movable = (kind == .planned || kind == .missed) && block.taskID != work.task?.id
+                && task?.occurrenceID == block.occurrenceID
+            items.append(OLTimelineItem(id: block.id, kind: kind, title: item.title, start: start, end: end,
                                         detail: detail, taskID: block.taskID, placementID: block.placementID,
-                                        movable: kind == .planned && block.taskID != work.task?.id))
-        }
-        for meeting in coordinator.externalCalendars.busyTimes(in: span) where meeting.end.timeIntervalSince(meeting.start) < 20 * 3600 {
-            items.append(OLTimelineItem(id: "event-\(meeting.id)", kind: .event, title: meeting.title,
-                                        start: max(meeting.start, span.start), end: min(meeting.end, span.end),
-                                        detail: "Calendar event"))
+                                        movable: movable, emphasis: emphasis,
+                                        listColor: task.flatMap { library.list($0.listID) }?.accent.color))
         }
         // Due at a time that day, with no slot of its own.
         for task in library.open where task.includesTime && !slotted.contains(task.id) {
             guard let due = task.dueDate, span.contains(due), !env.actions.isClosing(task.id) else { continue }
             items.append(OLTimelineItem(id: "due-\(task.id)", kind: .due, title: task.displayTitle, start: due, end: due,
-                                        taskID: task.id, movable: task.id != work.task?.id))
+                                        taskID: task.id, movable: task.id != work.task?.id,
+                                        listColor: library.list(task.listID)?.accent.color))
             slotted.insert(task.id)
         }
         items.sort { $0.start < $1.start }
@@ -511,8 +534,9 @@ struct TimelineSchedule {
             // In Today's order, most late first, the same on every launch.
             let tasks = library.open.sorted { ($0.createdAt, $0.id.uuidString) < ($1.createdAt, $1.id.uuidString) }
             let agenda = TodayAgenda(tasks: tasks, closing: env.actions.closing, now: now, calendar: dates, order: .schedule)
-            toPlan = agenda.scheduled.filter { !slotted.contains($0.id) && !$0.includesTime && $0.id != work.task?.id }
-            scrollHour = dates.component(.hour, from: now) - 1
+            toPlan = PhoneSchedule.unplaced(agenda.scheduled, slotted: slotted.contains, workID: work.task?.id,
+                                            closing: env.actions.closing)
+            scrollHour = schedule.hours(showsEarlier: false).lowerBound
         } else {
             // A later day's: what falls due that day, with no slot yet.
             if day > now {

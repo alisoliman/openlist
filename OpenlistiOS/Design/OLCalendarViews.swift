@@ -67,25 +67,30 @@ struct OLWeekStrip: View {
 /// One block on the timeline card.
 struct OLTimelineItem: Identifiable, Equatable {
     enum Kind: Equatable {
-        /// Done today: greyed and struck through.
+        /// Done: a green tint, struck through, its checkbox ticked.
         case done
-        /// The work on now: the accent, as tall as it runs.
+        /// The work on now: solid ink, as tall as it runs.
         case working
-        /// A task placed on the plan: `accentSoft` with its estimate.
+        /// A task's slot: a grey card with its checkbox in its list's colour.
         case planned
-        /// Someone's calendar: an outline, as tall as it runs.
+        /// A slot gone by without work: dashed red, carried forward.
+        case missed
+        /// A meeting: a quiet grey block, as tall as it runs.
         case event
-        /// Due at a time with no slot: `dangerSoft`, "Due".
+        /// Due at a time with no slot: a card at that time, "Due" in red.
         case due
     }
+
+    /// What's under way now and what comes next today, a step heavier.
+    enum Emphasis: Equatable { case none, now, next }
 
     let id: String
     var kind: Kind
     var title: String
     var start: Date
     var end: Date
-    /// "20m" on a planned block, "Now · 50 min left" on the working one,
-    /// "Calendar event" on an event.
+    /// A note after its time: "Now · 50 min left" on the working block,
+    /// "25 min left" on a slot on now.
     var detail: String?
     /// The task it is, for opening it; nil for a meeting.
     var taskID: UUID?
@@ -93,6 +98,14 @@ struct OLTimelineItem: Identifiable, Equatable {
     var placementID: UUID?
     /// It can be dragged, or moved by a quarter hour, to another time.
     var movable = false
+    var emphasis: Emphasis = .none
+    /// The task's list colour, which its checkbox wears.
+    var listColor: Color?
+    /// Over: a meeting gone by is drawn lighter.
+    var isPast = false
+    /// A meeting's place and calendar, for its details.
+    var location: String?
+    var calendarTitle: String?
 }
 
 /// Where a block sits: its top and height, and its column `index` of
@@ -130,60 +143,276 @@ struct OLTimelineGrid: View {
     }
 }
 
-/// A block's look, sized by the caller.
+/// The colours a task's block wears, as the Mac's Calendar and Today draw a
+/// session (`NXSessionLook`): a grey card with its checkbox in its list's
+/// colour, work under way solid ink, done a green tint, a slot gone by
+/// without work dashed red. What's on now, and next, is outlined a step heavier.
+struct OLSessionLook {
+    let kind: OLTimelineItem.Kind
+    var emphasis: OLTimelineItem.Emphasis = .none
+    var listColor: Color?
+
+    private var working: Bool { kind == .working }
+    private var done: Bool { kind == .done }
+    private var missed: Bool { kind == .missed }
+    /// Open and on time: the plain card the emphasis outlines.
+    private var plain: Bool { !working && !done && !missed }
+
+    var foreground: Color { working ? OL.onAccent : done ? OL.muted : OL.ink }
+    var fill: Color { working ? OL.accent : done ? OL.success.opacity(0.1) : OL.surface }
+    var ring: Color {
+        if working || missed { return .clear }
+        if done { return OL.success.opacity(0.28) }
+        return switch emphasis {
+        case .now: OL.ink.opacity(0.6)
+        case .next: OL.ink.opacity(0.3)
+        case .none: OL.ink.opacity(0.12)
+        }
+    }
+    var ringWidth: CGFloat { plain && emphasis == .now ? 1.5 : 1 }
+    /// The checkbox's ring while the task is open.
+    var circle: Color { working ? OL.onAccent : listColor ?? OL.muted }
+    /// The time and note under the title.
+    var detail: Color { working ? OL.onAccent.opacity(0.8) : missed ? OL.danger : OL.muted }
+    /// The dashes around a slot gone by.
+    static let missedDash = OL.danger.opacity(0.5)
+}
+
+/// A block's look, sized by the caller: a meeting a quiet grey block, its
+/// title darker while it's on; a task's block a card with its checkbox
+/// (`OLSessionLook`). One line holds the title and its start; from
+/// `twoLines` tall, the time goes under the title.
 struct OLTimelineBlock: View {
     let item: OLTimelineItem
+    /// How tall it's drawn.
+    var height: CGFloat = 22
+    /// How wide its lane is: a narrow one keeps its room for the title.
+    var width: CGFloat = .infinity
+    var calendar: Calendar = .current
+    /// Ticks the task from its checkbox; nil draws the checkbox alone.
+    var check: (() -> Void)?
+
+    /// Tall enough for the time on a line of its own.
+    static let twoLines: CGFloat = 38
+    /// Wide enough for a start time after the title on one line.
+    static let trailingRoom: CGFloat = 150
 
     var body: some View {
-        switch item.kind {
-        case .done:
-            Text(item.title)
-                .font(OLFont.timelineBlock)
-                .strikethrough(color: OL.muted)
-                .foregroundStyle(OL.muted)
-                .lineLimit(1)
-                .padding(.horizontal, 8)
-                .frame(maxWidth: .infinity, minHeight: 22, alignment: .leading)
-                .frame(maxHeight: .infinity, alignment: .top)
-                .background(OL.sunken, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-        case .working:
-            VStack(alignment: .leading) {
-                Text(item.title).font(OLFont.timelineBlockStrong).lineLimit(1)
-                Spacer(minLength: 0)
-                if let detail = item.detail { Text(detail).font(.caption).opacity(0.9).lineLimit(1) }
+        if item.kind == .event { meeting } else { session }
+    }
+
+    private func clock(_ date: Date) -> String { CompactText.clock(date, calendar: calendar) }
+
+    private var range: String { OLFormat.range(item.start, item.end, calendar: calendar) }
+
+    // MARK: Meeting
+
+    private var meeting: some View {
+        let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
+        let on = item.emphasis == .now
+        let twoLines = height >= Self.twoLines
+        return VStack(alignment: .leading, spacing: 1) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(item.title)
+                    .font(OLFont.timelineBlock.weight(on ? .semibold : .medium))
+                    .foregroundStyle(item.isPast && !on ? OL.muted : OL.ink)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if !twoLines, width >= Self.trailingRoom { time(clock(item.start), color: OL.muted, fixed: true) }
             }
-            .foregroundStyle(OL.onAccent)
-            .padding(.vertical, 8)
-            .padding(.horizontal, 10)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-            .background(OL.accent, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        case .planned, .due:
-            HStack {
-                Text(item.title).foregroundStyle(OL.ink).lineLimit(1)
-                Spacer(minLength: 4)
-                Text(item.kind == .due ? "Due" : item.detail ?? "")
-                    .fontWeight(.medium)
-                    .foregroundStyle(item.kind == .due ? OL.danger : OL.accentText)
+            if twoLines { time(range, color: OL.muted) }
+        }
+        .padding(.vertical, 3)
+        .padding(.horizontal, 8)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(OL.ink.opacity(on ? 0.085 : item.isPast ? 0.035 : 0.055), in: shape)
+        // Solid, so the grid's lines and the now line pass under it.
+        .background(OL.surface, in: shape)
+        .clipShape(shape)
+    }
+
+    // MARK: Session
+
+    private var session: some View {
+        let look = OLSessionLook(kind: item.kind, emphasis: item.emphasis, listColor: item.listColor)
+        let shape = RoundedRectangle(cornerRadius: 7, style: .continuous)
+        let missed = item.kind == .missed
+        let twoLines = height >= Self.twoLines && item.kind != .due
+        return VStack(alignment: .leading, spacing: 1) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                checkbox(look)
+                Text(item.title)
+                    .font(OLFont.timelineBlock)
+                    .strikethrough(item.kind == .done, color: OL.muted)
+                    .foregroundStyle(look.foreground)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if !twoLines, let trailing, width >= Self.trailingRoom || item.kind == .due {
+                    time(trailing, color: item.kind == .due ? OL.danger : look.detail, fixed: true)
+                }
             }
-            .font(OLFont.timelineBlock)
-            .padding(.horizontal, 8)
-            // A slot longer than its line keeps the line at its top.
-            .frame(maxWidth: .infinity, minHeight: 22)
-            .frame(maxHeight: .infinity, alignment: .top)
-            .background(item.kind == .due ? OL.dangerSoft : OL.accentSoft,
-                        in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-        case .event:
-            VStack(alignment: .leading, spacing: 0) {
-                Text(item.title).font(OLFont.timelineBlock).foregroundStyle(OL.ink).lineLimit(1)
-                Text(item.detail ?? "Calendar event").font(.caption).foregroundStyle(OL.muted).lineLimit(1)
-            }
-            .padding(.vertical, 5)
-            .padding(.horizontal, 8)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .overlay {
-                RoundedRectangle(cornerRadius: 6, style: .continuous).strokeBorder(OL.line, lineWidth: 1)
+            if twoLines {
+                time([item.kind == .working ? nil : range, note].compactMap(\.self).joined(separator: " · "),
+                     color: look.detail)
+                    .padding(.leading, 19)
             }
         }
+        .padding(.vertical, 3)
+        .padding(.horizontal, 7)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(look.fill, in: shape)
+        // Solid underneath a tint, so the grid and the now-line pass under it.
+        .background(OL.surface, in: shape)
+        .overlay {
+            if missed {
+                shape.strokeBorder(OLSessionLook.missedDash, style: StrokeStyle(lineWidth: 1, dash: [3, 2]))
+            } else {
+                shape.strokeBorder(look.ring, lineWidth: look.ringWidth)
+            }
+        }
+        .clipShape(shape)
+    }
+
+    /// What follows the title on one line: its start, the working block's
+    /// note, or "Due".
+    private var trailing: String? {
+        switch item.kind {
+        case .due: "Due"
+        case .working: item.detail
+        default: clock(item.start)
+        }
+    }
+
+    /// What follows the time on the second line.
+    private var note: String? {
+        switch item.kind {
+        case .missed: "carried forward"
+        case .done, .due, .event: nil
+        case .working, .planned: item.detail
+        }
+    }
+
+    /// A time or note: `fixed` after a title, which gives way first.
+    private func time(_ text: String, color: Color, fixed: Bool = false) -> some View {
+        Text(text)
+            .font(.caption2.weight(.medium))
+            .monospacedDigit()
+            .foregroundStyle(color)
+            .lineLimit(1)
+            .fixedSize(horizontal: fixed, vertical: false)
+    }
+
+    /// The task's checkbox in its list's colour, ticked green once done. A
+    /// tap on it, and a little around it, ticks the task.
+    @ViewBuilder private func checkbox(_ look: OLSessionLook) -> some View {
+        let circle = ZStack {
+            if item.kind == .done {
+                Circle().fill(OL.success)
+                Image(systemName: "checkmark").font(.system(size: 7, weight: .bold)).foregroundStyle(.white)
+            } else {
+                Circle().strokeBorder(look.circle, lineWidth: 1.4)
+            }
+        }
+        .frame(width: 13, height: 13)
+        .alignmentGuide(.firstTextBaseline) { $0[VerticalAlignment.center] + 4 }
+        if let check, item.kind != .done {
+            circle
+                // Only taps take the wider target: a drag lifted there still
+                // carries the block's own shape (`.interaction`).
+                .contentShape(.interaction, Circle().inset(by: -10))
+                .onTapGesture(perform: check)
+        } else {
+            circle
+        }
+    }
+}
+
+/// A meeting's details, as a long press on it shows them: its title, its
+/// time and length, how far off it is, and where and on which calendar.
+struct OLMeetingDetails: View {
+    let title: String
+    let start: Date
+    let end: Date
+    var location: String?
+    var calendarTitle: String?
+    let now: Date
+    var calendar: Calendar = .current
+
+    init(_ item: OLTimelineItem, now: Date, calendar: Calendar = .current) {
+        self.init(title: item.title, start: item.start, end: item.end, location: item.location,
+                  calendarTitle: item.calendarTitle, now: now, calendar: calendar)
+    }
+
+    init(title: String, start: Date, end: Date, location: String? = nil, calendarTitle: String? = nil, now: Date,
+         calendar: Calendar = .current) {
+        self.title = title
+        self.start = start
+        self.end = end
+        self.location = location
+        self.calendarTitle = calendarTitle
+        self.now = now
+        self.calendar = calendar
+    }
+
+    var body: some View {
+        let minutes = Int((end.timeIntervalSince(start) / 60).rounded())
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title.isEmpty ? "Busy" : title)
+                .font(OLFont.rowTitleStrong)
+                .foregroundStyle(OL.ink)
+                .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("\(OLFormat.range(start, end, calendar: calendar)) · \(OLFormat.span(minutes))")
+                    .font(OLFont.note.weight(.medium))
+                    .monospacedDigit()
+                    .foregroundStyle(OL.ink)
+                Text(Self.when(start: start, end: end, now: now, calendar: calendar))
+                    .font(OLFont.meta)
+                    .foregroundStyle(OL.muted)
+            }
+            if location != nil || calendarTitle != nil {
+                VStack(alignment: .leading, spacing: 6) {
+                    if let location { detail("mappin.and.ellipse", location) }
+                    if let calendarTitle { detail("calendar", calendarTitle) }
+                }
+            }
+        }
+        .padding(16)
+        .frame(width: 300, alignment: .leading)
+        .background(OL.surface)
+        .accessibilityElement(children: .combine)
+    }
+
+    private func detail(_ symbol: String, _ text: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: symbol)
+                .font(OLFont.meta)
+                .foregroundStyle(OL.muted)
+                .frame(width: 16)
+            Text(text)
+                .font(OLFont.meta)
+                .foregroundStyle(OL.ink)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// "In 40 min", "Now · 25 min left", "Ended 10 min ago"; on another
+    /// day, the day: "Tomorrow", "Fri".
+    static func when(start: Date, end: Date, now: Date, calendar: Calendar = .current) -> String {
+        if !calendar.isDate(start, inSameDayAs: now), !calendar.isDate(end, inSameDayAs: now) || end <= now {
+            return CompactText.day(start, now: now, calendar: calendar)
+        }
+        if start > now { return "In \(OLFormat.span(OLFormat.minutes(from: now, to: start)))" }
+        if end > now { return "Now · \(OLFormat.span(OLFormat.minutes(from: now, to: end))) left" }
+        return "Ended " + NXFormat.relative(end, now: now)
+    }
+
+    /// The details as VoiceOver reads them with the meeting: "14:00 to
+    /// 15:00, Studio, 3rd floor, Work calendar".
+    static func spoken(start: Date, end: Date, location: String?, calendarTitle: String?,
+                       calendar: Calendar = .current) -> String {
+        ["\(CompactText.clock(start, calendar: calendar)) to \(CompactText.clock(end, calendar: calendar))", location,
+         calendarTitle.map { "\($0) calendar" }].compactMap(\.self).joined(separator: ", ")
     }
 }
 
@@ -231,19 +460,24 @@ struct OLNowLine: View {
 
 /// The timeline card's canvas: the grid for `hours`, blocks where their times
 /// fall and as tall as they run (at least 22 pt; a due time is a 22 pt
-/// chip), side by side where they overlap, and the now-line. 44 pt an hour,
+/// card), side by side where they overlap, in the lanes the Mac's calendar
+/// lays out (`CalendarOverlapLayout`), and the now-line. 44 pt an hour,
 /// blocks from 58 pt to 10 pt short of the edge, 10 pt inside the card top
 /// and bottom. With `drag`, a planned or due block lifts to be dropped at
 /// another time; `ghost` draws where a drop would land. A planned block's
-/// long-press menu moves it a quarter hour or takes it off the calendar.
+/// long-press menu moves it a quarter hour or takes it off the calendar; a
+/// meeting's shows its details.
 struct OLTimeline: View {
     let items: [OLTimelineItem]
     var hours: ClosedRange<Int> = 8...19
+    /// Where the now-line goes: today's time, nil on another day.
     var now: Date?
     var hourHeight: CGFloat = 44
     var calendar: Calendar = .current
     /// The day drawn, so a block running to midnight ends at 24:00.
     var day: Date?
+    /// The time a meeting's details count from ("In 40 min"), on any day.
+    var moment: Date?
     /// Where a dragged task would land, drawn dashed.
     var ghost: OLTimelineItem?
     /// The task being dragged, faded where it was.
@@ -254,6 +488,10 @@ struct OLTimeline: View {
     var nudge: ((OLTimelineItem, Int) -> Void)?
     /// Takes a placed block's task off the calendar, from the same menu.
     var unplace: ((OLTimelineItem) -> Void)?
+    /// Ticks a block's task, from its checkbox.
+    var check: ((OLTimelineItem) -> Void)?
+    /// Opens a meeting where it lives, from its long-press menu.
+    var openMeeting: ((OLTimelineItem) -> Void)?
     var open: (OLTimelineItem) -> Void = { _ in }
 
     static let inset: CGFloat = 10
@@ -273,6 +511,11 @@ struct OLTimeline: View {
         let frames = Self.frames(items, top: offset(of:), minimum: 22)
         return ZStack(alignment: .topLeading) {
             OLTimelineGrid(hours: hours, hourHeight: hourHeight)
+            // The now-line runs between the blocks, not through their words,
+            // as the Mac's does; its dot sits in the gutter, clear of them.
+            if let now, let y = nowOffset(now) {
+                OLNowLine(now: now).offset(y: y - 1)
+            }
             ForEach(items) { item in
                 if let frame = frames[item.id] {
                     placed(item, frame: frame, width: width)
@@ -283,37 +526,55 @@ struct OLTimeline: View {
                     .frame(width: width, height: max(22, offset(of: ghost.end) - offset(of: ghost.start)))
                     .offset(x: Self.leading, y: offset(of: ghost.start))
             }
-            if let now, let y = nowOffset(now) {
-                OLNowLine(now: now).offset(y: y - 1)
-            }
         }
     }
 
     private func placed(_ item: OLTimelineItem, frame: OLTimelineFrame, width: CGFloat) -> some View {
         let column = (width + 2) / CGFloat(frame.count)
         let faded = item.taskID != nil && item.taskID == dragging
-        return block(item)
+        return block(item, height: frame.height, width: max(0, column - 2))
             .frame(width: max(0, column - 2), height: frame.height)
             .opacity(faded ? 0.35 : 1)
             .offset(x: Self.leading + CGFloat(frame.index) * column, y: frame.top)
     }
 
-    @ViewBuilder private func block(_ item: OLTimelineItem) -> some View {
-        // Done work and meetings open nothing, so they're drawn, not buttons.
-        if item.kind == .done || item.kind == .event {
-            OLTimelineBlock(item: item)
+    @ViewBuilder private func block(_ item: OLTimelineItem, height: CGFloat, width: CGFloat) -> some View {
+        let tick: (() -> Void)? = item.taskID == nil ? nil : check.map { check in { check(item) } }
+        let drawn = OLTimelineBlock(item: item, height: height, width: width, calendar: calendar, check: tick)
+        switch item.kind {
+        case .event:
+            // A meeting opens nothing: a long press shows its details.
+            let meeting = drawn
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(Self.spoken(item, calendar: calendar))
-        } else {
-            let button = Button { open(item) } label: {
-                OLTimelineBlock(item: item)
+            if let openMeeting {
+                meeting
+                    .contentShape(.contextMenuPreview, RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .contextMenu {
+                        Button("Open in Calendar", systemImage: "calendar") { openMeeting(item) }
+                    } preview: {
+                        OLMeetingDetails(item, now: moment ?? now ?? item.start, calendar: calendar)
+                    }
+                    .accessibilityAction(named: "Open in Calendar") { openMeeting(item) }
+            } else {
+                meeting
             }
-            .buttonStyle(OLRowPressStyle())
-            .accessibilityLabel(Self.spoken(item, calendar: calendar))
+        case .done:
+            // Done work opens nothing either, so it's drawn, not a button.
+            drawn
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(Self.spoken(item, calendar: calendar))
+        default:
+            let button = Button { open(item) } label: { drawn }
+                .buttonStyle(OLRowPressStyle())
+                .accessibilityLabel(Self.spoken(item, calendar: calendar))
+                .accessibilityActions {
+                    if let tick { Button("Complete", action: tick) }
+                }
             if let drag, item.movable {
                 button
                     .onDrag { drag(item) } preview: {
-                        OLTimelineBlock(item: item).frame(width: 220, height: 22)
+                        OLTimelineBlock(item: item, calendar: calendar).frame(width: 220, height: 22)
                     }
                     // Another time without a drag: a quarter hour either way,
                     // or off the calendar.
@@ -341,51 +602,48 @@ struct OLTimeline: View {
         }
     }
 
-    /// Each block's top, height and column among those it overlaps: a run of
-    /// blocks that touch shares the width, each in the first column free.
+    /// Each block's top, height and lane among those it overlaps, as the
+    /// Mac's calendar arranges them (`CalendarOverlapLayout`): a run of blocks
+    /// that touch shares the width, each in the first lane free, a meeting
+    /// first at the same time. Each claims its whole drawn box, so a short
+    /// block's one line is never drawn over by the next.
     static func frames(_ items: [OLTimelineItem], top: (Date) -> CGFloat, minimum: CGFloat) -> [String: OLTimelineFrame] {
-        var spans: [OLTimelineFrame] = []
-        for item in items {
+        let laid = items.map { item -> CalendarOverlapLayout.Item in
             let y = top(item.start)
             let length: CGFloat = item.kind == .due ? 0 : top(item.end) - y
-            spans.append(OLTimelineFrame(id: item.id, top: y, height: max(minimum, length)))
+            let height = max(minimum, length)
+            // Half a point short, so blocks that only touch don't share.
+            return CalendarOverlapLayout.Item(id: item.id, top: Double(y), height: Double(height),
+                                              end: Double(y + height - 0.5), isEvent: item.kind == .event)
         }
-        spans.sort { $0.top == $1.top ? $0.height > $1.height : $0.top < $1.top }
-        var result: [String: OLTimelineFrame] = [:]
-        var run: [OLTimelineFrame] = []
-        var bottoms: [CGFloat] = []
-        func close() {
-            for var member in run {
-                member.count = bottoms.count
-                result[member.id] = member
-            }
-            run = []
-            bottoms = []
-        }
-        for var span in spans {
-            if let end = bottoms.max(), span.top >= end - 0.5 { close() }
-            let index = bottoms.firstIndex { $0 <= span.top + 0.5 } ?? bottoms.count
-            if index == bottoms.count { bottoms.append(0) }
-            bottoms[index] = span.top + span.height
-            span.index = index
-            run.append(span)
-        }
-        close()
-        return result
+        return Dictionary(CalendarOverlapLayout.arrange(laid).map {
+            ($0.id, OLTimelineFrame(id: $0.id, top: CGFloat($0.top), height: CGFloat($0.height), index: $0.lane,
+                                    count: $0.laneCount))
+        }, uniquingKeysWith: { first, _ in first })
     }
 
-    /// "Pay the ryokan deposit, Due, 18:00", "Design sync, Calendar event,
-    /// 14:00 to 15:00".
+    /// What VoiceOver reads for a block: "Write interview feedback for Priya,
+    /// 11:30 to 11:50, next", "Design sync, meeting, 14:00 to 15:00, Studio,
+    /// Work calendar", "Pay the ryokan deposit, Due, 18:00".
     static func spoken(_ item: OLTimelineItem, calendar: Calendar = .current) -> String {
-        let detail: String? = switch item.kind {
-        case .due: "Due"
-        case .done: "Done"
-        default: item.detail
-        }
         let start = CompactText.clock(item.start, calendar: calendar)
-        let time = item.kind == .working || item.kind == .event
-            ? "\(start) to \(CompactText.clock(item.end, calendar: calendar))" : start
-        return [item.title, detail, time].compactMap(\.self).joined(separator: ", ")
+        let range = "\(start) to \(CompactText.clock(item.end, calendar: calendar))"
+        let emphasis: String? = switch item.emphasis {
+        case .now: "now"
+        case .next: "next"
+        case .none: nil
+        }
+        let parts: [String?] = switch item.kind {
+        case .due: [item.title, "Due", start]
+        case .done: [item.title, "Done", range]
+        case .working: [item.title, item.detail, range]
+        case .missed: [item.title, "missed, carried forward", range]
+        case .planned: [item.title, range, emphasis, item.detail]
+        case .event: [item.title, "meeting", OLMeetingDetails.spoken(start: item.start, end: item.end, location: item.location,
+                                                                     calendarTitle: item.calendarTitle, calendar: calendar),
+                      emphasis]
+        }
+        return parts.compactMap(\.self).joined(separator: ", ")
     }
 
     /// Wall-clock hours down the grid; with `day`, anything before it at

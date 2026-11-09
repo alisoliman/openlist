@@ -79,7 +79,6 @@ struct ScreenLogicTests {
         #expect(work.task?.displayTitle == "Draft Q3 OKRs")
         #expect(work.state == .working)
         #expect(work.leftText == "50 min left")
-        #expect(work.card?.eyebrow == "Now · 10:00")
         let start = try #require(work.start), end = try #require(work.end)
         #expect(OLFormat.range(start, end) == "10:00–11:30")
         #expect(abs(work.progress(now: phone.env.now) - 40.0 / 90.0) < 0.01)
@@ -91,7 +90,147 @@ struct ScreenLogicTests {
         let work = PhoneWork(env: phone.env, now: phone.env.now)
         #expect(work.state == .paused)
         #expect(work.task?.displayTitle == "Draft Q3 OKRs")
-        #expect(work.card?.state == .paused)
+        let card = try nowNext(phone)
+        #expect(card.lines.first?.kind == .work(.paused))
+        #expect(card.lines.first?.detail == "Paused · 50 min left · Q3 planning")
+    }
+
+    // MARK: Today's Now card
+
+    /// Today's Now card as the phone reads it, through the Mac's model.
+    private func nowNext(_ phone: TestPhone, now: Date? = nil) throws -> TodayNowNext {
+        let now = now ?? phone.env.now
+        let lib = try library(phone)
+        return TodayNowNext(schedule: PhoneSchedule.make(env: phone.env, now: now), work: PhoneWork(env: phone.env, now: now),
+                            now: now, calendar: phone.env.settings.calendar, task: { phone.store.block(id: $0) },
+                            list: { lib.list($0)?.displayTitle })
+    }
+
+    /// The work in hand leads, then the next thing to start: a session with
+    /// its list, as the Mac's Today says them.
+    @Test func theNowCardLeadsWithTheWorkThenWhatsNext() throws {
+        let phone = try TestPhone(seeded: true)
+        let card = try nowNext(phone)
+        #expect(card.lines.map(\.role) == [.now, .next])
+        #expect(card.lines.map(\.title) == ["Draft Q3 OKRs", "Write interview feedback for Priya"])
+        #expect(card.lines[0].kind == .work(.working))
+        #expect(card.lines[0].detail == "Working · 50 min left · Q3 planning")
+        #expect(card.lines[1].kind == .session)
+        #expect(card.lines[1].detail == "11:30 · in 50 min · Hiring loop")
+        #expect(card.lines[1].listID == phone.list("Hiring loop")?.id)
+        #expect(card.emptyText == nil)
+    }
+
+    /// A meeting under way is now beside the work, and one ahead is next,
+    /// with its place.
+    @Test func meetingsAreNowAndNextToo() throws {
+        let calendar = TestClock.calendar
+        let at1350 = try #require(calendar.date(bySettingHour: 13, minute: 50, second: 0, of: TestClock.mockupNow))
+        let phone = try TestPhone(seeded: true, clock: .fixed(at1350))
+        let card = try nowNext(phone)
+        #expect(card.lines.map(\.title) == ["Draft Q3 OKRs", "Design sync"])
+        #expect(card.lines[1].role == .next && card.lines[1].kind == .meeting)
+        #expect(card.lines[1].detail == "14:00 · in 10 min · Studio, 3rd floor")
+        #expect(card.lines[1].meeting?.calendarTitle == "Work")
+
+        let at1420 = at1350.addingTimeInterval(30 * 60)
+        let later = try nowNext(phone, now: at1420)
+        #expect(later.lines.map(\.role) == [.now, .alsoNow, .next])
+        #expect(later.lines[1].title == "Design sync" && later.lines[1].detail == "Until 15:00 · Studio, 3rd floor")
+        #expect(later.lines[2].title == "Order new water filters")
+        #expect(later.lines[2].detail == "16:30 · in 2h 10m · Home")
+    }
+
+    /// With no work in hand, a slot on now leads, as the work the card's
+    /// button starts.
+    @Test func aSlotOnNowIsTheWorkToStart() throws {
+        let phone = try TestPhone(seeded: true)
+        phone.env.actions.undoLatest()
+        #expect(phone.env.calendar.activeSession == nil)
+        let card = try nowNext(phone)
+        #expect(card.lines.first?.title == "Draft Q3 OKRs")
+        #expect(card.lines.first?.kind == .work(.planned))
+        #expect(card.lines.first?.detail == "Until 11:30 · Q3 planning")
+        #expect(card.lines.last?.role == .next)
+    }
+
+    /// An empty day says so, and a day with all of it over says nothing else
+    /// is on.
+    @Test func theNowCardSaysWhenNothingIsOn() throws {
+        let empty = try TestPhone()
+        let none = try nowNext(empty)
+        #expect(none.lines.isEmpty && none.emptyText == "Nothing scheduled today.")
+
+        let phone = try TestPhone(seeded: true)
+        let evening = try #require(TestClock.calendar.date(bySettingHour: 23, minute: 30, second: 0, of: TestClock.mockupNow))
+        phone.env.calendar.pause(now: phone.env.now)
+        phone.env.calendar.dismissResume()
+        let over = try nowNext(phone, now: evening)
+        #expect(over.lines.isEmpty && over.emptyText == "Nothing else scheduled today.")
+    }
+
+    /// Today's tasks with no time yet are the ones the Timeline offers to
+    /// plan: late, due or planned today, with no slot and no time of day.
+    @Test func todayCountsTheTasksWithNoTimeYet() throws {
+        let phone = try TestPhone(seeded: true)
+        let lib = try library(phone)
+        let now = phone.env.now, calendar = phone.env.settings.calendar
+        let slots = PhoneWork.slots(phone.env.calendar, on: now, calendar: calendar)
+        let agenda = TodayAgenda(tasks: lib.tasksInOutlineOrder(blocks: try blocks(phone)), now: now, calendar: calendar,
+                                 order: .schedule, time: { slots[$0.id] })
+        let work = PhoneWork(env: phone.env, now: now)
+        let unplaced = PhoneSchedule.unplaced(agenda.scheduled, slotted: { slots[$0] != nil }, workID: work.task?.id,
+                                              closing: phone.env.actions.closing)
+        #expect(unplaced.map(\.displayTitle) == ["Close out Q2 retro actions", "Reserve the Nishiki market tour",
+                                                  "Fix the dripping bathroom tap", "Ask Mika to water the planters"])
+        let timeline = TimelineSchedule(env: phone.env, library: lib, day: calendar.startOfDay(for: now), now: now)
+        #expect(Set(timeline.toPlan.map(\.id)) == Set(unplaced.map(\.id)))
+        // A tick still settling leaves the count straight away.
+        phone.env.actions.complete([unplaced[0]])
+        #expect(PhoneSchedule.unplaced(agenda.scheduled, slotted: { slots[$0] != nil }, workID: work.task?.id,
+                                       closing: phone.env.actions.closing).count == 3)
+    }
+
+    /// The fixture's calendar counts as connected; the device's own, never
+    /// connected in a review session, doesn't, and one connected but no
+    /// longer allowed is unavailable.
+    @Test func theCalendarsConnection() {
+        let defaults = TestDefaults.make()
+        #expect(PhoneSchedule.connection(ExternalCalendarSource(defaults: defaults, fixtureBusyTimes: [])) == .connected)
+        #expect(PhoneSchedule.connection(ExternalCalendarSource(defaults: defaults)) == .notConnected)
+        defaults.set(true, forKey: "calendar.connected")
+        #expect(PhoneSchedule.connection(ExternalCalendarSource(defaults: defaults)) == .unavailable)
+    }
+
+    /// `OpenlistReviewMeetings` gives a review session no calendar, or an
+    /// empty one, for the empty states; otherwise the fixture's meetings.
+    @Test func reviewSessionsChooseTheirMeetings() throws {
+        let defaults = TestDefaults.make()
+        let now = TestClock.mockupNow
+        #expect(PhoneEnvironment.reviewMeetings(defaults: defaults, now: now, environment: ["OpenlistReviewMeetings": "NO"]) == nil)
+        let none = try #require(PhoneEnvironment.reviewMeetings(defaults: defaults, now: now,
+                                                                environment: ["OpenlistReviewMeetings": "none"]))
+        #expect(none.isFixture && none.busyTimes(in: DateInterval(start: now.addingTimeInterval(-86_400), duration: 172_800)).isEmpty)
+        let fixture = try #require(PhoneEnvironment.reviewMeetings(defaults: defaults, now: now, environment: [:]))
+        #expect(fixture.busyTimes(in: DateInterval(start: now.addingTimeInterval(-86_400), duration: 172_800)).map(\.title)
+                == ["Team standup", "Design sync"])
+    }
+
+    /// A meeting's details say how far off it is, in the schedule's words.
+    @Test func aMeetingsDetailsSayWhen() throws {
+        let calendar = TestClock.calendar
+        let now = TestClock.mockupNow
+        func at(_ hour: Int, _ minute: Int = 0, days: Int = 0) throws -> Date {
+            let day = try #require(calendar.date(byAdding: .day, value: days, to: now))
+            return try #require(calendar.date(bySettingHour: hour, minute: minute, second: 0, of: day))
+        }
+        #expect(OLMeetingDetails.when(start: try at(14), end: try at(15), now: now, calendar: calendar) == "In 3h 20m")
+        #expect(OLMeetingDetails.when(start: try at(10, 30), end: try at(11), now: now, calendar: calendar) == "Now · 20 min left")
+        #expect(OLMeetingDetails.when(start: try at(9, 30), end: try at(9, 45), now: now, calendar: calendar) == "Ended 55 min ago")
+        #expect(OLMeetingDetails.when(start: try at(9, days: 1), end: try at(10, days: 1), now: now, calendar: calendar)
+                == CompactText.day(try at(9, days: 1), now: now, calendar: calendar))
+        #expect(OLMeetingDetails.spoken(start: try at(14), end: try at(15), location: "Studio", calendarTitle: "Work",
+                                        calendar: calendar) == "14:00 to 15:00, Studio, Work calendar")
     }
 
     @Test func todaysRowsSayWhatTodayDoesnt() throws {
@@ -149,14 +288,42 @@ struct ScreenLogicTests {
         #expect(drawn["Standup notes"]?.kind == .done)
         #expect(drawn["Draft Q3 OKRs"]?.kind == .working)
         #expect(drawn["Draft Q3 OKRs"]?.detail == "Now · 50 min left")
-        #expect(drawn["Write interview feedback for Priya"]?.detail == "20m")
-        #expect(drawn["Update the design role scorecard"]?.detail == "30m")
-        #expect(drawn["Order new water filters"]?.detail == "10m")
+        #expect(drawn["Draft Q3 OKRs"]?.emphasis == .now)
+        // What comes next is a step heavier; the rest are plain cards in their lists' colours.
+        #expect(drawn["Write interview feedback for Priya"]?.kind == .planned)
+        #expect(drawn["Write interview feedback for Priya"]?.emphasis == .next)
+        #expect(drawn["Write interview feedback for Priya"]?.listColor == ListAccent.pink.color)
+        #expect(drawn["Update the design role scorecard"]?.emphasis == OLTimelineItem.Emphasis.none)
+        #expect(drawn["Order new water filters"]?.movable == true)
         #expect(drawn["Design sync"]?.kind == .event)
+        #expect(drawn["Design sync"]?.location == "Studio, 3rd floor" && drawn["Design sync"]?.isPast == false)
+        #expect(drawn["Team standup"]?.kind == .event && drawn["Team standup"]?.isPast == true)
         #expect(drawn["Pay the ryokan deposit"]?.kind == .due)
+        #expect(OLTimeline.spoken(try #require(drawn["Write interview feedback for Priya"]), calendar: TestClock.calendar)
+                == "Write interview feedback for Priya, 11:30 to 11:50, next")
+        #expect(OLTimeline.spoken(try #require(drawn["Design sync"]), calendar: TestClock.calendar)
+                == "Design sync, meeting, 14:00 to 15:00, Studio, 3rd floor, Work calendar")
         #expect(schedule.hours == 0...24)
         #expect(Set(schedule.toPlan.map(\.displayTitle)) == ["Close out Q2 retro actions", "Reserve the Nishiki market tour",
                                                               "Fix the dripping bathroom tap", "Ask Mika to water the planters"])
+    }
+
+    /// A slot gone by without work is missed, dashed red, and can still be
+    /// dragged to a new time; on another day nothing is now or next.
+    @Test func aSlotGoneByIsMissed() throws {
+        let phone = try TestPhone(seeded: true)
+        let task = try #require(phone.task("Fix the dripping bathroom tap"))
+        let today = TestClock.calendar.startOfDay(for: TestClock.mockupNow)
+        _ = try #require(phone.store.setPlacement(for: task, start: today.addingTimeInterval(8 * 3600),
+                                                  end: today.addingTimeInterval(8.5 * 3600), isPinned: true))
+        phone.env.calendar.replan(now: phone.env.now)
+        let schedule = TimelineSchedule(env: phone.env, library: try library(phone), day: today, now: phone.env.now)
+        let missed = try #require(schedule.items.first { $0.title == "Fix the dripping bathroom tap" && $0.end <= phone.env.now })
+        #expect(missed.kind == .missed && missed.movable && missed.emphasis == .none)
+        #expect(OLTimeline.spoken(missed, calendar: TestClock.calendar) == "Fix the dripping bathroom tap, missed, carried forward, 08:00 to 08:30")
+        let tomorrow = today.addingTimeInterval(86_400)
+        let next = TimelineSchedule(env: phone.env, library: try library(phone), day: tomorrow, now: phone.env.now)
+        #expect(next.items.allSatisfy { $0.emphasis == .none })
     }
 
     @Test func toPlanFitsTasksIntoFreeTimeWithUndo() throws {

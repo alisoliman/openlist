@@ -6,8 +6,10 @@
 import SwiftData
 import SwiftUI
 
-/// The paper companion's day: progress, the current work, and quiet cards
-/// separating overdue, due, planned, tonight's and starred tasks.
+/// The paper companion's day: progress, the Now card (what's on now and
+/// next, meetings and planned work alike, with Fit for the tasks that have no
+/// time yet), and quiet cards separating overdue, due, planned, tonight's
+/// and starred tasks.
 struct TodayScreen: View {
     @Environment(PhoneEnvironment.self) private var env
     @Environment(\.phoneLibrary) private var library
@@ -28,6 +30,8 @@ private struct TodayPage: View {
     @Environment(PhoneEnvironment.self) private var env
     @Environment(\.phoneLibrary) private var library
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    /// The day's meetings, read again only when the calendars reload.
+    @State private var meetings = WidgetSnapshotSources.MeetingCache()
 
     var body: some View {
         let navigator = env.navigator
@@ -36,9 +40,11 @@ private struct TodayPage: View {
         let slots = PhoneWork.slots(env.calendar, on: now, calendar: calendar)
         let agenda = TodayAgenda(tasks: tasks, closing: env.actions.closing, now: now, calendar: calendar,
                                  order: .schedule, time: { slots[$0.id] })
+        let schedule = PhoneSchedule.make(env: env, now: now, meetings: meetings)
+        let clear = agenda.isClear && work.task == nil
         // The clear day fits the screen, unless large text pushes its action off it.
         OLScreen(identifier: PhoneRoute.today.screenIdentifier,
-                 scrolls: dynamicTypeSize.isAccessibilitySize || !(agenda.isClear && work.task == nil)) {
+                 scrolls: dynamicTypeSize.isAccessibilitySize || !clear) {
             OLTopBar {
                 if !dynamicTypeSize.isAccessibilitySize {
                     OLEyebrow(OLFormat.eyebrowDate(now, calendar: calendar))
@@ -55,7 +61,12 @@ private struct TodayPage: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
             TodayProgressHeader(done: agenda.progress.done, total: agenda.progress.total)
-            if agenda.isClear && work.task == nil {
+            if clear {
+                // A meeting still to come keeps its line above the clear day.
+                if schedule.hasRest {
+                    TodayScheduleCard(schedule: schedule, work: work, now: now, showsNotes: false)
+                        .padding(.top, OLMetrics.headerGap)
+                }
                 if env.awaitsFirstImport(library) {
                     OLLoadingState("Getting your lists from iCloud…")
                         .frame(maxHeight: .infinity)
@@ -70,11 +81,10 @@ private struct TodayPage: View {
                     .frame(maxHeight: .infinity)
                 }
             } else {
-                if let card = work.card {
-                    OLNowCard(eyebrow: card.eyebrow, title: card.title, detail: card.detail, state: card.state,
-                              open: { navigator.open(.working) }, play: { work.play(env) })
-                        .padding(.top, OLMetrics.headerGap)
-                }
+                TodayScheduleCard(schedule: schedule, work: work, now: now,
+                                  toPlan: PhoneSchedule.unplaced(agenda.scheduled, slotted: { slots[$0] != nil },
+                                                                 workID: work.task?.id, closing: env.actions.closing))
+                    .padding(.top, OLMetrics.headerGap)
                 taskGroup("Overdue", symbol: "exclamationmark.circle.fill", color: OL.danger,
                           tasks: agenda.overdue, slots: slots, nowID: work.task?.id)
                 taskGroup("Due today", symbol: "sun.max.fill", color: OL.ink,

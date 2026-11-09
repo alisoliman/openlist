@@ -8,6 +8,7 @@ import Foundation
 /// The work in hand as Today's Now card and Working show it: the running
 /// session, else the paused one that can resume, else a task whose slot is
 /// on now. Read from the calendar each render, so it never keeps a copy.
+/// The Now card leads with it, ahead of the day's other lines (`TodayNowNext`).
 @MainActor
 struct PhoneWork {
     enum State: Equatable {
@@ -70,18 +71,6 @@ struct PhoneWork {
         let length = end.timeIntervalSince(start)
         let passed = state == .planned ? now.timeIntervalSince(start) : length - remainingMinutes * 60
         return min(1, max(0, passed / length))
-    }
-
-    /// Today's Now card, when there's work in hand.
-    var card: (eyebrow: String, title: String, detail: String, state: OLNowCard.State)? {
-        guard let task else { return nil }
-        let eyebrow = start.map { "Now · \(CompactText.clock($0))" } ?? "Now"
-        let cardState: OLNowCard.State = switch state {
-        case .planned: .planned
-        case .working: .working
-        case .paused: .paused
-        }
-        return (eyebrow, task.displayTitle, leftText, cardState)
     }
 
     /// The Now card's play: starts or resumes the work, then opens Working.

@@ -184,7 +184,22 @@ struct ComponentGallery: View {
 
     private var cards: some View {
         OLGroup("Now card · list cards · empty state") {
-            OLNowCard(eyebrow: "Now · 10:00", title: "Draft Q3 OKRs", detail: "50 min left", open: {}, play: {})
+            OLNowCard {
+                VStack(alignment: .leading, spacing: 0) {
+                    HStack(spacing: 10) {
+                        OLNowCardLine(role: .now, title: "Draft Q3 OKRs", detail: "Working · 50 min left · Q3 planning",
+                                      listColor: ListAccent.blue.color)
+                        OLIconButton("timer", label: "Open Working", kind: .accent, iconSize: 16) {}
+                    }
+                    OLNowCardLine(role: .next, title: "Design sync", detail: "14:00 · in 3h 20m · Studio, 3rd floor")
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 6)
+                Rectangle().fill(OL.line).frame(height: 1)
+                OLNowNote("4 tasks have no time yet", actionTitle: "Fit") {}
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 4)
+            }
             OLListGrid {
                 OLListCard(title: "Weekend in Kyoto", icon: "🗻", accent: .violet, detail: "7 open") {}
                 OLListCard(title: "Home", icon: "🏡", accent: .green, detail: "3 open") {}
@@ -209,13 +224,18 @@ struct ComponentGallery: View {
                         selection: Binding(get: { day ?? today }, set: { day = $0 }), today: today, calendar: calendar)
             OLGroupHeader("Schedule") { OLGroupAction("3 to plan") {} }
             OLTimeline(items: [
+                .init(id: "s", kind: .event, title: "Team standup", start: at(9), end: at(9, 15), isPast: true),
+                .init(id: "m", kind: .missed, title: "Close out Q2 retro actions", start: at(8, 30), end: at(9),
+                      listColor: ListAccent.blue.color),
                 .init(id: "a", kind: .done, title: "Standup notes", start: at(9, 15), end: at(9, 45)),
                 .init(id: "b", kind: .working, title: "Draft Q3 OKRs", start: at(10), end: at(11, 30), detail: "Now · 50 min left"),
                 .init(id: "c", kind: .planned, title: "Write interview feedback for Priya", start: at(11, 31), end: at(11, 50),
-                      detail: "20m"),
-                .init(id: "d", kind: .event, title: "Design sync", start: at(14), end: at(15)),
-                .init(id: "e", kind: .due, title: "Pay the ryokan deposit", start: at(18), end: at(18)),
-            ], now: at(10, 40), calendar: calendar)
+                      emphasis: .next, listColor: ListAccent.pink.color),
+                .init(id: "d", kind: .event, title: "Design sync", start: at(14), end: at(15), location: "Studio, 3rd floor",
+                      calendarTitle: "Work"),
+                .init(id: "e", kind: .due, title: "Pay the ryokan deposit", start: at(18), end: at(18),
+                      listColor: ListAccent.violet.color),
+            ], hours: 8...19, now: at(10, 40), calendar: calendar)
             .olCard()
         }
     }

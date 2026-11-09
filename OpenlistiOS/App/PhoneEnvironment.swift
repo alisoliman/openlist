@@ -101,11 +101,9 @@ final class PhoneEnvironment {
         // day's planned slots and the default estimate, which completions and
         // work sessions record. An iPhone app is suspended while its user
         // works, so a gap in the clock is no reason to pause.
-        // A review session's calendar is the fixture's: the mockups' meeting,
+        // A review session's calendar is the fixture's: the mockups' meetings,
         // never the Mac's or the simulator's own calendars.
-        let meetings = seedsReviewFixture && ReviewSession.identifier != nil
-            ? ExternalCalendarSource(defaults: calendarDefaults, fixtureBusyTimes: PhoneFixture.meetings(now: clock.now))
-            : nil
+        let meetings = seedsReviewFixture ? Self.reviewMeetings(defaults: calendarDefaults, now: clock.now) : nil
         calendar = CalendarCoordinator(store: store, defaults: calendarDefaults, externalCalendars: meetings,
                                        presence: WorkPresencePolicy(pausesAfterClockGap: false,
                                                                     adoptsOpenSession: { [presence] session in presence.adopts(session) }))
@@ -116,6 +114,21 @@ final class PhoneEnvironment {
             calendar: calendar, settings: settings, libraryID: libraryID, isAppActive: platform.isAppActive))
         widgetCommands = WidgetCommandProcessor(store: store, calendar: calendar, publisher: widgetPublisher, actions: actions)
         wire()
+    }
+
+    /// A review session's calendar: the fixture's meetings, as the Mac's
+    /// review copies have theirs. For the empty states, `OpenlistReviewMeetings`
+    /// in the launch environment says `NO`, for no calendar connected (the
+    /// device's own, which a review session never connects), or `none`, for a
+    /// connected calendar with nothing on it. Nil outside review sessions.
+    static func reviewMeetings(defaults: UserDefaults, now: Date,
+                               environment: [String: String] = ProcessInfo.processInfo.environment) -> ExternalCalendarSource? {
+        guard ReviewSession.identifier != nil else { return nil }
+        switch environment["OpenlistReviewMeetings"] {
+        case "NO": return nil
+        case "none": return ExternalCalendarSource(defaults: defaults, fixtureBusyTimes: [])
+        default: return ExternalCalendarSource(defaults: defaults, fixtureBusyTimes: PhoneFixture.meetings(now: now))
+        }
     }
 
     /// Whether bootstrap carries on this device's open work session instead of

@@ -81,4 +81,14 @@ func todayScheduleChecks() {
     let done = TodaySchedule(blocks: [block("ticked", at(10, 30), at(11))], busy: [], now: now, calendar: calendar,
                              isDone: { _ in true })
     expect(done.current.isEmpty && done.next == nil, "A session done, or settling as done, is neither now nor next")
+
+    // Another day, as the iPhone's Timeline reads its week: that day's items,
+    // with now and next still today's.
+    let tomorrow = TodaySchedule(blocks: blocks, busy: busy, now: now, day: at(15, day: 10), calendar: calendar)
+    expect(ids(tomorrow.items) == ["tomorrow"] && tomorrow.day == calendar.startOfDay(for: at(9, day: 10)),
+           "Another day reads that day's meetings and sessions only")
+    expect(tomorrow.current.isEmpty && tomorrow.next?.title == "tomorrow", "Nothing is under way on a day to come")
+    let yesterday = TodaySchedule(blocks: blocks, busy: busy, now: now, day: at(12, day: 8), calendar: calendar)
+    expect(ids(yesterday.items) == ["yesterday", "night shift"] && yesterday.current.isEmpty && yesterday.next == nil,
+           "A day gone by has nothing now or next, and a slot into today still shows on it")
 }
