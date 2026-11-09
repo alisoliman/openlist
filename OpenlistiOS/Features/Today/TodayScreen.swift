@@ -136,6 +136,9 @@ private struct TodayPage: View {
                 }
             }
             .padding(.top, OLMetrics.groupGap)
+            // Moved as one when the page shifts, as the schedule folding
+            // does, so the due menus drawn over the rows move with them.
+            .geometryGroup()
         }
     }
 

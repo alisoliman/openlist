@@ -26,7 +26,10 @@ struct TodayScheduleCard: View {
     /// across launches: Today's card has it; the Work tab's, whose timeline
     /// goes on from its lines, stays open.
     var folds = false
-    @AppStorage(Self.foldedKey, store: ReviewSession.defaults) private var folded = false
+    @AppStorage(Self.foldedKey, store: ReviewSession.defaults) private var storedFold = false
+    /// The fold as last set here, ahead of the stored one: a stored value's
+    /// change doesn't carry its animation, a state's does.
+    @State private var folded: Bool?
     /// VoiceOver on the fold, where it goes once the folded line it was on
     /// opens and goes away.
     @AccessibilityFocusState private var onFold: Bool
@@ -44,7 +47,7 @@ struct TodayScheduleCard: View {
         let model = TodayNowNext(schedule: schedule, work: work, now: now, calendar: calendar,
                                  task: { store.block(id: $0) }, list: { library.list($0)?.displayTitle })
         let connection = PhoneSchedule.connection(env.calendar.externalCalendars)
-        let isFolded = folds && folded
+        let isFolded = folds && (folded ?? storedFold)
         let notes = !isFolded && showsNotes && (!toPlan.isEmpty || connection != .connected)
         if showsNotes || !model.lines.isEmpty {
             OLNowCard {
@@ -138,9 +141,11 @@ struct TodayScheduleCard: View {
         .accessibilityIdentifier("today.schedule.summary")
     }
 
-    /// Folds the card or opens it, the page below moving up or down with it.
+    /// Folds the card or opens it, the page below moving up or down with it,
+    /// and keeps it so for the next launch.
     private func fold(_ isFolded: Bool) {
         withAnimation(style.animation(.snappy(duration: 0.3))) { folded = isFolded }
+        storedFold = isFolded
     }
 
     /// A line's VoiceOver action that folds the card, where it folds.
