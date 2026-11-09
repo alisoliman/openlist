@@ -51,7 +51,7 @@ final class NavigationUITests: XCTestCase {
         let field = app.textFields["capture.field"]
         XCTAssertTrue(field.waitForExistence(timeout: 5))
         field.tap()
-        field.typeText("Renew the passport")
+        app.type("Renew the passport", into: field)
         app.screen("screen.capture").buttons["Cancel"].tap()
         let keep = app.buttons["Keep for Later"]
         XCTAssertTrue(keep.waitForExistence(timeout: 5))

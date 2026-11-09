@@ -120,7 +120,7 @@ final class VoiceCaptureUITests: XCTestCase {
         app.dock("capture").tap()
         let field = app.textFields["capture.field"]
         XCTAssertTrue(field.waitForExistence(timeout: 5))
-        field.typeText("Keep typing this task")
+        app.type("Keep typing this task", into: field)
         app.buttons["capture.voice"].tap()
         app.buttons["capture.voiceDone"].tap()
         XCTAssertTrue(app.screen("capture.heard").waitForExistence(timeout: 5))
