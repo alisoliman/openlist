@@ -185,7 +185,13 @@ final class AppSettings {
         mcpAllowsWrites = defaults.bool(forKey: Key.mcpAllowsWrites)
         mcpPort = defaults.integer(forKey: Key.mcpPort)
         takesDailySnapshots = defaults.bool(forKey: Key.dailySnapshots)
-        accent = NextAccent(rawValue: defaults.string(forKey: Key.accent) ?? "") ?? .violet
+        // The interface went monochrome in November 2026: every device moves
+        // to Neutral once, then keeps whatever accent is chosen after that.
+        if !defaults.bool(forKey: Key.accentMovedToNeutral) {
+            defaults.set(NextAccent.neutral.rawValue, forKey: Key.accent)
+            defaults.set(true, forKey: Key.accentMovedToNeutral)
+        }
+        accent = NextAccent(rawValue: defaults.string(forKey: Key.accent) ?? "") ?? .neutral
         density = NextDensity(rawValue: defaults.string(forKey: Key.density) ?? "") ?? .comfortable
         serifTitles = defaults.bool(forKey: Key.serifTitles)
         motion = NextMotion(rawValue: defaults.string(forKey: Key.motion) ?? "") ?? .expressive
@@ -222,6 +228,7 @@ final class AppSettings {
         static let mcpAllowsWrites = "settings.mcpAllowsWrites"
         static let mcpPort = "settings.mcpPort"
         static let accent = "settings.accent"
+        static let accentMovedToNeutral = "settings.accentMovedToNeutral"
         static let density = "settings.density"
         static let serifTitles = "settings.serifTitles"
         static let motion = "settings.motion"
@@ -296,33 +303,61 @@ struct CaptureShortcut: Codable, Equatable {
     ]
 }
 
+/// The accent the caret, focus, primary buttons, progress and links take.
+/// Neutral, the default, is the ink itself, so the interface stays
+/// monochrome and colour is left to status and lists' own colours. A hue
+/// is an opt-in.
 enum NextAccent: String, CaseIterable, Identifiable {
-    case violet, blue, green, orange
+    case neutral, violet, blue, green, orange
     var id: String { rawValue }
     var title: String {
         switch self {
+        case .neutral: "Neutral"
         case .violet: "Violet"
         case .blue: "Blue"
         case .green: "Green"
         case .orange: "Orange"
         }
     }
-    /// The accent as 0xRRGGBB, which the widget snapshot carries. `color`
-    /// is built from it, so the widgets can never drift from the app.
+    /// The accent as 0xRRGGBB, which the widget snapshot carries. A hue's
+    /// `color` is built from it, so the widgets can never drift from the
+    /// app. Neutral's is the light appearance's ink, which the widgets turn
+    /// to their own ink in dark mode.
     nonisolated var hex: UInt32 {
         switch self {
+        case .neutral: 0x17161A
         case .violet: 0x7C4DF0
         case .blue: 0x2F6FE0
         case .green: 0x1F8A6D
         case .orange: 0xC2532B
         }
     }
-    /// Spelled out rather than `Color(hex:)`: the dev-isolation checks build
-    /// these settings without Shared/ListAccent.swift.
+    /// Neutral is the ink, near black on light paper and near white on dark,
+    /// as `NX.ink`; a hue is one sRGB value in both appearances. Spelled out
+    /// rather than `Color(hex:)` or `NX`: the dev-isolation checks build these
+    /// settings without Shared/ListAccent.swift or the Mac's tokens.
     var color: Color {
-        Color(.sRGB, red: Double((hex >> 16) & 0xFF) / 255, green: Double((hex >> 8) & 0xFF) / 255,
-              blue: Double(hex & 0xFF) / 255)
+        guard self != .neutral else { return Self.ink }
+        return Color(.sRGB, red: Double((hex >> 16) & 0xFF) / 255, green: Double((hex >> 8) & 0xFF) / 255,
+                     blue: Double(hex & 0xFF) / 255)
     }
+
+    /// #17161A, or #F1EFEC in dark mode.
+    private static let ink: Color = {
+        #if os(macOS)
+        Color(nsColor: NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+                ? NSColor(srgbRed: 0xF1 / 255, green: 0xEF / 255, blue: 0xEC / 255, alpha: 1)
+                : NSColor(srgbRed: 0x17 / 255, green: 0x16 / 255, blue: 0x1A / 255, alpha: 1)
+        })
+        #else
+        Color(uiColor: UIColor { traits in
+            traits.userInterfaceStyle == .dark
+                ? UIColor(red: 0xF1 / 255, green: 0xEF / 255, blue: 0xEC / 255, alpha: 1)
+                : UIColor(red: 0x17 / 255, green: 0x16 / 255, blue: 0x1A / 255, alpha: 1)
+        })
+        #endif
+    }()
 }
 
 enum NextDensity: String, CaseIterable, Identifiable {

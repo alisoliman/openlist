@@ -7,25 +7,55 @@ import AppKit
 import CoreText
 import SwiftUI
 
-/// Tokens for the Openlist Next interface: warm paper surfaces, one ink colour
-/// used at several strengths, and a small semantic palette.
+/// Tokens for the Openlist Next interface: near-neutral paper surfaces, one
+/// ink colour used at several strengths, grey states, and a small semantic
+/// palette kept for what colour means: overdue, done and priority.
 enum NX {
     // MARK: Surfaces
 
-    static let paper = dynamic(light: 0xFCFBFA, dark: 0x1D1C20)
-    static let sidebar = dynamic(light: 0xF1EEEA, dark: 0x252328)
-    static let inspector = dynamic(light: 0xF7F5F2, dark: 0x222025)
+    // Close to neutral in both appearances, so no surface carries a hue: the
+    // dark ones lost their violet cast, the light sidebar its beige.
+    static let paper = dynamic(light: 0xFCFCFB, dark: 0x1C1C1E)
+    static let sidebar = dynamic(light: 0xF4F4F2, dark: 0x232325)
+    static let inspector = dynamic(light: 0xF8F8F7, dark: 0x202022)
     /// Raised cards, focused rows, popovers.
-    static let card = dynamic(light: 0xFFFFFF, dark: 0x2B292F)
+    static let card = dynamic(light: 0xFFFFFF, dark: 0x2A2A2D)
     /// Ink — every text and hairline colour is this at some opacity.
     static let ink = dynamic(light: 0x17161A, dark: 0xF1EFEC)
     /// The tray and other inverted surfaces.
-    static let inverse = dynamic(light: 0x17161A, dark: 0x3A3740)
-    /// Filled primary buttons, like triage's "Keep for later".
-    static let primaryButton = dynamic(light: 0x17161A, dark: 0x3A3740)
-    static let primaryButtonHover = dynamic(light: 0x2C2A31, dark: 0x46434C)
+    static let inverse = dynamic(light: 0x17161A, dark: 0x39393C)
+    /// The one filled primary action on a surface, like triage's "Keep for
+    /// later": solid ink, inverted in either appearance, with `onPrimary`
+    /// words. It's the neutral accent's fill too.
+    static let primaryButton = ink
+    static let primaryButtonHover = dynamic(light: 0x34333A, dark: 0xD9D7D3)
+    static let onPrimary = paper
 
     static func ink(_ opacity: Double) -> Color { ink.opacity(opacity) }
+
+    // MARK: States
+
+    // Grey in every accent: selection, hover, chips and highlights never
+    // take the accent's hue, so colour is left to what it means.
+
+    /// The pointer's wash on rows, menu items and quiet buttons.
+    static let hoverFill = ink(0.05)
+    /// A selected row or tile.
+    static let selectedFill = ink(0.075)
+    /// A chip or pill that's on, a step darker than the grey chips at rest,
+    /// like capture's destination.
+    static let chosenFill = ink(0.12)
+    /// Where something just landed, like a fresh row or a search hit, as it
+    /// eases out.
+    static let highlightFill = ink(0.065)
+    /// The quiet ring around a focused row or a chosen tile.
+    static let selectedRing = ink(0.14)
+    /// Where a drag would land: a list, the inspector, a calendar column.
+    static let dropRing = ink(0.35)
+    /// Native switches and sliders while the accent is Neutral: the ink in
+    /// light mode, a lighter grey in dark mode, where a white knob on white
+    /// ink would disappear.
+    static let controlTint = dynamic(light: 0x2E2D33, dark: 0x8F8C95)
 
     // MARK: Text
 
@@ -53,10 +83,8 @@ enum NX {
     static let redText = dynamic(light: 0xC03A42, dark: 0xF07A80)
     static let amber = Color(hex: 0xE8A917)
     static let amberText = dynamic(light: 0xA87A06, dark: 0xE8B84A)
+    /// The Inbox's own colour, which its glyph wears as a list's does.
     static let inbox = Color(hex: ListAccent.inboxHex)
-    static let today = Color(hex: 0xE0861F)
-    static let lists = Color(hex: 0x5B5BD6)
-    static let grey = Color(hex: 0x6E6A73)
 
     /// A checkbox's ring by priority: softened, so a list of prioritised
     /// tasks reads as titles first and a column of colour second.
@@ -122,7 +150,10 @@ enum NX {
 
 /// Per-window style resolved from settings and the system reduce-motion flag.
 struct NextStyle: Equatable {
-    var accent: Color = NextAccent.violet.color
+    /// The accent the settings choose. It marks only the caret and focus,
+    /// primary buttons, progress, links and on-states; selection, hover,
+    /// chips and icons stay grey whatever it is.
+    var accentChoice: NextAccent = .neutral
     /// Multiplies the durations the design paces with ms() (rows, screens,
     /// triage, the inspector): 0.6 restrained, 1 expressive, 1.2 playful, 0.4
     /// reduced. Its fixed timings go through `NX` instead.
@@ -139,15 +170,24 @@ struct NextStyle: Equatable {
     var serifTitles = true
 
     var rowVerticalPadding: CGFloat { compact ? 3 : 5 }
-    /// A filled accent button under the pointer: each sRGB channel of the
-    /// accent 0x12 down, as the design's Planned now Start goes from #7C4DF0
-    /// to #6A3BDE.
+    /// The accent's colour: the ink while it's Neutral, else its hue.
+    var accent: Color { accentChoice.color }
+    /// Words and symbols on a filled accent: the paper on ink, white on a hue.
+    var onAccent: Color { accentChoice == .neutral ? NX.onPrimary : .white }
+    /// A filled accent button under the pointer. The ink lifts a step toward
+    /// the paper; a hue takes 0x12 off each sRGB channel, as the design's
+    /// Planned now Start goes from #7C4DF0 to #6A3BDE.
     var accentHover: Color {
-        guard let rgb = NSColor(accent).usingColorSpace(.sRGB) else { return accent }
+        guard accentChoice != .neutral, let rgb = NSColor(accent).usingColorSpace(.sRGB) else { return NX.primaryButtonHover }
         let shade = { (value: CGFloat) in max(0, value - 0x12 / 255) }
         return Color(.sRGB, red: shade(rgb.redComponent), green: shade(rgb.greenComponent),
                      blue: shade(rgb.blueComponent), opacity: rgb.alphaComponent)
     }
+    /// The tint native controls take, a switch's or slider's on-state: a
+    /// grey that keeps their white knob in sight while the accent is Neutral.
+    var controlTint: Color { accentChoice == .neutral ? NX.controlTint : accent }
+    /// A text field's border while it has focus.
+    var focusRing: Color { accent.opacity(accentChoice == .neutral ? 0.38 : 0.6) }
     func ms(_ base: Double) -> Double { (base * motion).rounded() }
     func ease(_ base: Double) -> Animation { NX.ease(ms(base)) }
     func spring(_ base: Double) -> Animation { lively ? NX.spring(ms(base)) : NX.ease(ms(base)) }
@@ -178,6 +218,7 @@ extension NextAccent {
     /// would be a new colour on every update.
     var editorColor: NSColor {
         switch self {
+        case .neutral: NXEditor.ink
         case .violet: NXEditor.accentViolet
         case .blue: NXEditor.accentBlue
         case .green: NXEditor.accentGreen

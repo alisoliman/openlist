@@ -18,7 +18,7 @@ struct NextSettingsScreen: View {
     var body: some View {
         @Bindable var settings = env.settings
         NXPage {
-            NXScreenHeader(tile: .icon("gearshape.fill"), color: NX.grey, title: "Settings", subtitle: "Preferences for this Mac")
+            NXScreenHeader(tile: .icon("gearshape.fill"), title: "Settings", subtitle: "Preferences for this Mac")
             VStack(alignment: .leading, spacing: 18) {
                 NXSettingsGroup(title: "Tasks") {
                     NXSettingToggle(label: "Show completed tasks", hint: "Lists and Today expand their Completed section by default",
@@ -123,7 +123,7 @@ struct NextSettingsScreen: View {
                     NXSettingMenu(label: "Motion", hint: "How lively completions, triage and transitions feel",
                                   value: settings.motion.title,
                                   entries: nxChoices(NextMotion.allCases, selection: $settings.motion, title: \.title))
-                    NXSettingMenu(label: "Accent", hint: "Selection, focus and today’s highlights", value: settings.accent.title,
+                    NXSettingMenu(label: "Accent", hint: "The caret, focus, main buttons and progress", value: settings.accent.title,
                                   swatch: settings.accent.color,
                                   entries: nxChoices(NextAccent.allCases, selection: $settings.accent, title: \.title))
                     NXSettingMenu(label: "Density", hint: "Row spacing in lists", value: settings.density.title,
@@ -695,7 +695,7 @@ struct NXSettingField: View {
             .frame(width: width)
             .background(NX.ink(0.05), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .strokeBorder(focused ? style.accent.opacity(0.6) : .clear, lineWidth: 1))
+                .strokeBorder(focused ? style.focusRing : .clear, lineWidth: 1))
             .accessibilityLabel(label ?? placeholder)
     }
 }

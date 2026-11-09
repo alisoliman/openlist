@@ -43,7 +43,7 @@ struct ReminderPicker: View {
                 // A reminder at the due time rings grey, not being one of its own.
                 Image(systemName: block.reminderAt == nil && dueTime == nil ? "bell.slash" : "bell")
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(block.reminderAt == nil ? NX.ink(0.4) : style.accent)
+                    .foregroundStyle(block.reminderAt == nil ? NX.ink(0.4) : NX.ink)
                     .accessibilityHidden(true)
                 // As the Reminder pill that opens it reads, with the time.
                 Text(block.reminderAt.map { NXFormat.dueAndClock($0) } ?? dueTime.map { NXFormat.atDueTime($0) } ?? "No reminder")

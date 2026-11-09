@@ -10,10 +10,9 @@ struct ContentRevealNoteReadyKey: PreferenceKey {
 
 /// Non-task notes have no inspector editor. Reveal the matching passage in
 /// its owning document, with the full retained note available for reading.
-/// It reads as the design's note block, with the match in the accent as its
-/// search hits have it.
+/// It reads as the design's note block, with the match marked as its search
+/// hits have it.
 struct ContentRevealNote: View {
-    @Environment(\.nextStyle) private var style
     let text: String
     let query: String
     let requestID: UUID?
@@ -66,13 +65,13 @@ struct ContentRevealNote: View {
             .textSelection(.enabled)
     }
 
-    /// The match as the design's search marks it: the accent on its faint
-    /// tint, in the note's own weight.
+    /// The match as search marks it: ink on a faint grey, in the note's own
+    /// weight.
     private func highlighted(_ excerpt: String) -> AttributedString {
         var value = AttributedString(excerpt)
         if let range = value.range(of: query, options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive]) {
-            value[range].foregroundColor = style.accent
-            value[range].backgroundColor = style.accent.opacity(0.15)
+            value[range].foregroundColor = NX.ink
+            value[range].backgroundColor = NX.ink(0.1)
         }
         return value
     }

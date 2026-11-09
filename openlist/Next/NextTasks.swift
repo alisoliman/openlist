@@ -23,18 +23,6 @@ extension TaskQuery {
     }
 }
 
-extension TaskQuery.Segment {
-    /// A list or label pill in its list's or label's colour; nil for the rest.
-    @MainActor
-    func color(in library: NextLibrary) -> Color? {
-        switch kind {
-        case .list: library.list(listID)?.nxColor
-        case .label: labelID.flatMap(library.label)?.nxColor
-        default: nil
-        }
-    }
-}
-
 // MARK: - Screen
 
 struct NextTasksScreen: View {
@@ -169,7 +157,7 @@ private struct NXTasksPage: View {
                                             now: now)
         let listCount = library.lists.count
         return NXPage(rowIDs: NXGroupsStack.rowIDs(groups, workbench: workbench)) {
-            NXScreenHeader(tile: .icon("checklist"), color: NX.green, title: "Tasks",
+            NXScreenHeader(tile: .icon("checklist"), title: "Tasks",
                            subtitle: "\(library.open.count) open across \(listCount) \(listCount == 1 ? "list" : "lists")")
             Group {
                 if queryMode {
@@ -425,11 +413,13 @@ private struct NXTasksQueryBar: View {
     @ViewBuilder
     private func segmentText(_ segment: TaskQuery.Segment) -> some View {
         if let kind = segment.kind {
-            let color = segment.color(in: library) ?? (kind == .flag ? NX.amberText : style.accent)
-            let fill = kind == .flag ? NX.amber : color
+            // Words the query reads are grey, as chips are; only a flag, a
+            // star or a priority, keeps its amber.
+            let flag = kind == .flag
+            let color = flag ? NX.amberText : NX.textSecondary
             Text(segment.text)
                 .foregroundStyle(color)
-                .background(fill.opacity(0.11))
+                .background(flag ? NX.amber.opacity(0.11) : NX.ink(0.06))
                 .overlay(alignment: .bottom) { Rectangle().fill(color.opacity(0.33)).frame(height: 1.5) }
                 // The underline is an inset shadow in the design, so it follows the rounded corners.
                 .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
@@ -441,13 +431,12 @@ private struct NXTasksQueryBar: View {
     private func pillPopover(query: String, width: CGFloat) -> some View {
         let words = TaskQuery.words(in: query)
         let vocabulary = TaskQuery(library: library)
-        let rows: [(String, [(word: String, label: String, color: Color, list: TaskList?)])] = [
+        let rows: [(String, [(word: String, label: String, list: TaskList?)])] = [
             ("When", [("overdue", "Overdue"), ("today", "Today"), ("tomorrow", "Tomorrow"), ("week", "This week"),
-                      ("later", "Later"), ("undated", "No date")].map { ($0.0, $0.1, style.accent, nil) }),
-            ("List", library.lists.map { (vocabulary.key(for: $0), $0.displayTitle, $0.nxColor, $0) }),
-            ("Label", library.labels.map { (vocabulary.key(for: $0), "#\($0.name)", $0.nxColor, nil) }),
-            ("Only", [("starred", "Starred"), ("planned", "Planned"), ("high", "High priority")]
-                .map { ($0.0, $0.1, NX.amberText, nil) }),
+                      ("later", "Later"), ("undated", "No date")].map { ($0.0, $0.1, nil) }),
+            ("List", library.lists.map { (vocabulary.key(for: $0), $0.displayTitle, $0) }),
+            ("Label", library.labels.map { (vocabulary.key(for: $0), "#\($0.name)", nil) }),
+            ("Only", [("starred", "Starred"), ("planned", "Planned"), ("high", "High priority")].map { ($0.0, $0.1, nil) }),
         ]
         return VStack(alignment: .leading, spacing: 0) {
             ForEach(rows.filter { !$0.1.isEmpty }, id: \.0) { title, pills in
@@ -464,7 +453,7 @@ private struct NXTasksQueryBar: View {
                     NXFlow(spacing: 5) {
                         // TaskQuery gives every list and label its own word, so words identify pills.
                         ForEach(pills, id: \.word) { pill in
-                            NXQueryPill(label: pill.label, list: pill.list, color: pill.color, isOn: words.contains(pill.word)) {
+                            NXQueryPill(label: pill.label, list: pill.list, isOn: words.contains(pill.word)) {
                                 env.workbench.tasksQuery = TaskQuery.toggle(pill.word, in: env.workbench.tasksQuery)
                                 fieldFocused = true
                             }
@@ -502,10 +491,11 @@ private struct NXTasksQueryBar: View {
     }
 }
 
+/// A word the query can take: grey, and darker once it's in the query, as
+/// chips are chosen.
 private struct NXQueryPill: View {
     let label: String
     var list: TaskList?
-    let color: Color
     let isOn: Bool
     let action: () -> Void
 
@@ -517,12 +507,12 @@ private struct NXQueryPill: View {
             Text(label).font(.system(size: 12, weight: .medium)).lineLimit(1)
                 .padding(.vertical, (12 - NX.lineHeight(12)) / 2)
         }
-        .foregroundStyle(isOn ? .white : NX.textSecondary)
+        .foregroundStyle(isOn ? NX.ink : NX.textSecondary)
         .padding(.vertical, 6)
         .padding(.horizontal, 10)
         // Filled only when on: the design's pills have no hover.
-        .background(isOn ? color : .clear, in: Capsule())
-        .overlay(Capsule().strokeBorder(isOn ? color : NX.ink(0.12), lineWidth: 1))
+        .background(isOn ? NX.chosenFill : .clear, in: Capsule())
+        .overlay(Capsule().strokeBorder(isOn ? .clear : NX.ink(0.12), lineWidth: 1))
         .contentShape(Capsule())
         .onTapGesture(perform: action)
         .animation(NX.cssEase(140), value: isOn)

@@ -70,7 +70,7 @@ struct WorkMovePicker: View {
                     .buttonStyle(NXPanelButtonStyle(kind: .primary))
             }
         }
-        .tint(style.accent)
+        .tint(style.controlTint)
         .onAppear { date = max(.now, block.start); refresh() }
         .onChange(of: date) { _, _ in refresh() }
         .onPreferenceChange(NXPendingCustomValueKey.self) { typedTime = $0 }

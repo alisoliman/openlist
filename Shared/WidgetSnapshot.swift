@@ -179,8 +179,12 @@ nonisolated struct WidgetSnapshot: Codable, Equatable, Sendable {
     }
     /// The library the rows belong to, for building item links.
     var libraryID: UUID?
-    /// The app's accent colour as 0xRRGGBB.
-    var accentHex: UInt32 = 0x7C4DF0
+    /// The app's accent colour as 0xRRGGBB: Neutral's ink by default, which
+    /// the widgets draw as their own ink in either appearance.
+    var accentHex: UInt32 = WidgetSnapshot.neutralAccentHex
+    /// `NextAccent.neutral.hex`, the light appearance's ink, spelled out for
+    /// the widget, which builds without the app's settings.
+    nonisolated static let neutralAccentHex: UInt32 = 0x17161A
     /// Mirrors the app's serif-title setting.
     var serifTitles: Bool = true
     /// `Calendar.firstWeekday` the app uses (1 = Sunday … 7 = Saturday).

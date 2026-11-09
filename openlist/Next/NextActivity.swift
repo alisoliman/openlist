@@ -24,7 +24,7 @@ struct NextActivityScreen: View {
 
     var body: some View {
         NXPage(measure: nil) {
-            NXScreenHeader(tile: .icon("square.grid.2x2.fill"), color: style.accent, title: "Activity",
+            NXScreenHeader(tile: .icon("square.grid.2x2.fill"), title: "Activity",
                            subtitle: "What you finished and what changed")
             Group {
                 if let heatmap {

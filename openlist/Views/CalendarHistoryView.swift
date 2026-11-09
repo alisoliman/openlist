@@ -98,7 +98,7 @@ struct CalendarHistoryView: View {
         .padding(24)
         .frame(width: 580, height: 560)
         .presentationBackground(NX.card)
-        .tint(env.workbench.style.accent)
+        .tint(env.workbench.style.controlTint)
         .environment(\.nextStyle, env.workbench.style)
     }
 

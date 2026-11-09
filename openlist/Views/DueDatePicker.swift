@@ -13,7 +13,6 @@ struct DueDatePicker: View {
     let block: Block
 
     @Environment(AppEnvironment.self) private var env
-    @Environment(\.nextStyle) private var style
 
     @State private var selectedDate: Date = .now
     @State private var includesTime = false
@@ -98,7 +97,7 @@ struct DueDatePicker: View {
             if !typedPhrase.isEmpty {
                 let parsed = DateParser.parse(typedPhrase)
                 if let date = parsed.date {
-                    // An accent chip in capture's chips' words, that wraps
+                    // A chip in capture's chips' words and grey, that wraps
                     // when a long phrase outgrows the popover.
                     HStack(alignment: .firstTextBaseline, spacing: 4) {
                         Image(systemName: "arrow.turn.down.right")
@@ -109,10 +108,10 @@ struct DueDatePicker: View {
                             .font(.system(size: 11, weight: .semibold))
                             .fixedSize(horizontal: false, vertical: true)
                     }
-                    .foregroundStyle(style.accent)
+                    .foregroundStyle(NX.textSecondary)
                     .padding(.horizontal, 7)
                     .padding(.vertical, 3)
-                    .background(style.accent.opacity(0.12), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                    .background(NX.ink(0.05), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
                 } else {
                     Text("Not recognised yet")
                         .font(.system(size: 11.5, weight: .medium))

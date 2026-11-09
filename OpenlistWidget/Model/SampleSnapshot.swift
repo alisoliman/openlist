@@ -24,7 +24,7 @@ extension WidgetSnapshot {
         var snapshot = WidgetSnapshot()
         snapshot.generatedAt = now
         snapshot.libraryID = SampleData.id(0x1)
-        snapshot.accentHex = 0x7C4DF0
+        snapshot.accentHex = WidgetSnapshot.neutralAccentHex
         snapshot.serifTitles = true
         let weekStart = day(-2)
         snapshot.weekStart = weekStart

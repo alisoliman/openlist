@@ -53,7 +53,7 @@ struct QuickCaptureView: View {
             }
             .environment(\.nextLibrary, library)
             .environment(\.nextStyle, style)
-            .tint(style.accent)
+            .tint(style.controlTint)
             .animation(style.ease(140), value: draft.notice)
             .onAppear {
                 if animatesPresentation { withAnimation(NX.ease(180)) { shown = true } }

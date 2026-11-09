@@ -143,7 +143,7 @@ final class NXInspectorTextView: NSTextView {
     private(set) var isLarge = false
     private(set) var isSerif = false
     /// The note's links, in the caret's accent.
-    var accent: NSColor = .controlAccentColor {
+    var accent: NSColor = NXEditor.ink {
         didSet { if accent !== oldValue { restyle() } }
     }
     var onFocus: ((Bool) -> Void)?

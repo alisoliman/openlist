@@ -465,16 +465,25 @@ do {
     check(restrained.ease(320) == NX.ease(192) && playful.ease(320) == NX.ease(384) && restrained.spring(240) == NX.ease(144),
           "A row's rowIn still follows the Motion setting, and Restrained drops the checkbox's bounce")
 }
-// A filled accent button's hover takes 0x12 off each sRGB channel, as the
-// design's Planned now Start goes from #7C4DF0 to #6A3BDE.
+// A filled hue button's hover takes 0x12 off each sRGB channel, as the
+// design's Planned now Start goes from #7C4DF0 to #6A3BDE. Neutral, the
+// default, is solid ink with the paper's words, and lifts to the primary
+// button's own hover.
 do {
     func hex(_ color: Color) -> String {
         let rgb = NSColor(color).usingColorSpace(.sRGB)!
         return String(format: "#%02X%02X%02X", Int((rgb.redComponent * 255).rounded()),
                       Int((rgb.greenComponent * 255).rounded()), Int((rgb.blueComponent * 255).rounded()))
     }
-    check(hex(NextStyle().accentHover) == "#6A3BDE", "The violet accent's hover is the design's #6A3BDE")
-    check(hex(NextStyle(accent: NextAccent.orange.color).accentHover) == "#B04119",
+    let neutral = NextStyle()
+    check(neutral.accentChoice == .neutral && neutral.accent == NextAccent.neutral.color
+          && neutral.onAccent == NX.onPrimary && neutral.accentHover == NX.primaryButtonHover
+          && neutral.controlTint == NX.controlTint,
+          "The default accent is Neutral: ink buttons with paper words, and grey native controls")
+    check(hex(NextStyle(accentChoice: .violet).accentHover) == "#6A3BDE", "The violet accent's hover is the design's #6A3BDE")
+    check(hex(NextStyle(accentChoice: .orange).accentHover) == "#B04119",
           "Another accent's hover darkens by the same step")
+    check(NextStyle(accentChoice: .orange).onAccent == .white && NextStyle(accentChoice: .orange).controlTint == NextAccent.orange.color,
+          "A hue keeps white words and tints native controls itself")
 }
 print("✅ \(checks) hidden inspector copy/Undo/Redo lifetime checks passed")

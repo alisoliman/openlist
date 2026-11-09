@@ -111,7 +111,7 @@ struct NXInspectorPlan: View {
                 }
                 .labelsHidden()
                 .controlSize(.small)
-                .tint(style.accent)
+                .tint(style.controlTint)
                 .frame(maxWidth: 340)
                 .accessibilityValue(DurationText.text(for: shown))
                 NXDurationField(minutes: shown, alignment: isPage ? .leading : .trailing) {
@@ -234,7 +234,7 @@ struct NXDurationField: View {
         .padding(.horizontal, 6)
         .background(NX.ink(draft != nil ? 0.06 : hovering ? 0.05 : 0), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
-            .strokeBorder(draft != nil ? style.accent.opacity(0.6) : .clear, lineWidth: 1))
+            .strokeBorder(draft != nil ? style.focusRing : .clear, lineWidth: 1))
         .onHover { hovering = $0 }
         // The text, not its hover fill, lines up with what's beside it.
         .padding(alignment == .leading ? .leading : .trailing, -6)

@@ -42,7 +42,7 @@ struct NextCalendarScreen: View {
     }
 
     private func header<Trailing: View>(_ dates: [Date], @ViewBuilder trailing: @escaping () -> Trailing) -> some View {
-        NXScreenHeader(tile: .icon("calendar"), color: style.accent, title: "Calendar", subtitle: Self.rangeText(dates), trailing: trailing)
+        NXScreenHeader(tile: .icon("calendar"), title: "Calendar", subtitle: Self.rangeText(dates), trailing: trailing)
     }
 
     /// Each task once, at its first block in the days on show, then the
@@ -271,7 +271,7 @@ private struct NXCalendarBody: View {
             }
             .buttonStyle(NXHoverButtonStyle(hover: style.accentHover, rest: style.accent, radius: 8,
                                             padding: EdgeInsets(top: 7, leading: 12, bottom: 7, trailing: 12),
-                                            foreground: .white, hoverForeground: .white))
+                                            foreground: style.onAccent, hoverForeground: style.onAccent))
         }
         .padding(EdgeInsets(top: 10, leading: 14, bottom: 10, trailing: 12))
         .background(NX.card, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
@@ -412,7 +412,7 @@ private struct NXDayHead: View {
                 .font(.system(size: 10, weight: .semibold))
                 .kerning(0.4)
                 .textCase(.uppercase)
-                .foregroundStyle(isToday ? style.accent : NX.textTertiary)
+                .foregroundStyle(isToday ? NX.ink : NX.textTertiary)
                 .lineLimit(1)
                 .padding(.vertical, (10 - NX.lineHeight(10)) / 2)
             // The design's grid aligns the date and the load at the foot of their boxes.
@@ -420,7 +420,7 @@ private struct NXDayHead: View {
                 Text("\(cal.component(.day, from: date))")
                     .font(.system(size: 17, weight: .medium))
                     .monospacedDigit()
-                    .foregroundStyle(isToday ? style.accent : weekend ? NX.textTertiary : NX.ink)
+                    .foregroundStyle(weekend && !isToday ? NX.textTertiary : NX.ink)
                     .padding(.vertical, (17 - NX.lineHeight(17)) / 2)
                 Spacer(minLength: 0)
                 if load > 0 {
@@ -730,7 +730,9 @@ private struct NXCalendarBlock: View {
     var body: some View {
         let workbench = env.workbench
         let task = env.store.block(id: block.taskID)
-        let color = library.list(task?.listID)?.nxColor ?? style.accent
+        // The list's colour marks only the block's circle: the block is a
+        // grey card, and work under way is solid ink.
+        let color = library.list(task?.listID)?.nxColor ?? NX.ink(0.45)
         let closing = workbench.closing[block.taskID] != nil
         let done = block.isCompleted || task?.isCompleted == true || closing
         let running = block.isActive
@@ -743,9 +745,9 @@ private struct NXCalendarBlock: View {
         let meta = note(missed: missed, running: running, working: working, isNow: isNow)
         // Inspected, or its row focused for the keys.
         let focused = env.navigator.openTaskID == block.taskID || workbench.focusID == block.taskID
-        let fg: Color = working ? .white : done ? NX.ink(0.5) : NX.ink
-        let background: Color = working ? color : done ? NX.green.opacity(0.1) : missed ? NX.card.opacity(0.7) : color.opacity(0.12)
-        let ring: Color = working ? .clear : done ? NX.green.opacity(0.28) : missed ? NX.red.opacity(0.35) : color.opacity(0.25)
+        let fg: Color = working ? NX.onPrimary : done ? NX.ink(0.5) : NX.ink
+        let background: Color = working ? NX.primaryButton : done ? NX.green.opacity(0.1) : missed ? NX.card.opacity(0.7) : NX.card
+        let ring: Color = working ? .clear : done ? NX.green.opacity(0.28) : missed ? NX.red.opacity(0.35) : NX.ink(0.12)
         let fresh = workbench.freshBlockTaskID == block.taskID
         let title = task?.displayTitle ?? block.titleSnapshot ?? "Task"
         // A slot of open work moves; running work and what's done stay put.
@@ -759,9 +761,10 @@ private struct NXCalendarBlock: View {
                         // The design's `background 200ms ease`, from the accent to
                         // green as the completion settles.
                         Circle().animation(NX.cssEase(200)) { $0.foregroundStyle(closing ? style.accent : NX.green) }
-                        Image(systemName: "checkmark").font(.system(size: 7, weight: .bold)).foregroundStyle(.white)
+                        Image(systemName: "checkmark").font(.system(size: 7, weight: .bold))
+                            .foregroundStyle(closing ? style.onAccent : .white)
                     } else {
-                        Circle().strokeBorder(working ? .white : color, lineWidth: 1.3)
+                        Circle().strokeBorder(working ? NX.onPrimary : color, lineWidth: 1.3)
                     }
                 }
                 .frame(width: 12, height: 12)
@@ -787,7 +790,7 @@ private struct NXCalendarBlock: View {
             if height >= 34 {
                 Text(time + (meta.map { " · " + $0 } ?? ""))
                     .font(.system(size: 9.5, weight: .medium))
-                    .foregroundStyle(working ? .white.opacity(0.8) : missed ? NX.redText : NX.textTertiary)
+                    .foregroundStyle(working ? NX.onPrimary.opacity(0.8) : missed ? NX.redText : NX.textTertiary)
                     .lineSpacing(NXCal.timeLeading)
                     .padding(.vertical, NXCal.timeLeading / 2)
                     .padding(.leading, 17)
@@ -1015,8 +1018,8 @@ private struct NXUnplannedColumn: View {
         .overlay {
             if drag.unplanning {
                 RoundedRectangle(cornerRadius: 12, style: .continuous)
-                    .strokeBorder(style.accent.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                    .background(style.accent.opacity(0.05), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .strokeBorder(NX.dropRing, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                    .background(NX.ink(0.03), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .padding(-6)
                     .allowsHitTesting(false)
             }
@@ -1303,22 +1306,22 @@ private struct NXUnplanDrop: DropDelegate {
 
 /// Where a dragged item would land, with its times.
 private struct NXDropGhost: View {
-    @Environment(\.nextStyle) private var style
     let target: NXCalendarDrag.Target
 
     var body: some View {
-        let color = target.isOpen ? style.accent : NX.red
+        // Grey where it fits, red where it would clash.
+        let color = target.isOpen ? NX.ink : NX.red
         Text("\(NXFormat.clock(target.start))–\(NXFormat.clock(target.end))")
             .font(.system(size: 9.5, weight: .semibold))
             .monospacedDigit()
-            .foregroundStyle(target.isOpen ? style.accent : NX.redText)
+            .foregroundStyle(target.isOpen ? NX.textSecondary : NX.redText)
             .lineLimit(1)
             .padding(.vertical, 3)
             .padding(.horizontal, 6)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-            .background(color.opacity(0.1), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+            .background(color.opacity(target.isOpen ? 0.05 : 0.1), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous)
-                .strokeBorder(color.opacity(0.7), style: StrokeStyle(lineWidth: 1.5, dash: [4, 3])))
+                .strokeBorder(color.opacity(target.isOpen ? 0.4 : 0.7), style: StrokeStyle(lineWidth: 1.5, dash: [4, 3])))
             .allowsHitTesting(false)
             .accessibilityHidden(true)
     }
@@ -1326,13 +1329,10 @@ private struct NXDropGhost: View {
 
 /// A card dragged from Not planned yet, drawn as the block it would become.
 private struct NXDragPreview: View {
-    @Environment(\.nextStyle) private var style
-    @Environment(\.nextLibrary) private var library
     let task: Block
     let minutes: Int
 
     var body: some View {
-        let color = library.list(task.listID)?.nxColor ?? style.accent
         VStack(alignment: .leading, spacing: 2) {
             Text(task.displayTitle)
                 .font(.system(size: 10.5, weight: .semibold))
@@ -1345,9 +1345,8 @@ private struct NXDragPreview: View {
         .padding(.vertical, 4)
         .padding(.horizontal, 7)
         .frame(width: 150, height: min(160, max(30, CGFloat(minutes) / 60 * NXCal.hourHeight)), alignment: .topLeading)
-        .background(color.opacity(0.14), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
         .background(NX.card, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(color.opacity(0.35), lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).strokeBorder(NX.ink(0.16), lineWidth: 1))
     }
 }
 
