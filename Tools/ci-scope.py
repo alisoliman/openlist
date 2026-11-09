@@ -190,8 +190,9 @@ def scope(files):
         check, suites = 'ios', suites_reading_ios()
     else:
         check, suites = 'none', []
+    # A skipped matrix still needs a value to expand.
     return {'check': check, 'suites': ' '.join(suites), 'release': str(release).lower(),
-            'ios': str(bool(parts)).lower(), 'parts': json.dumps(sorted(parts))}, reasons
+            'ios': str(bool(parts)).lower(), 'parts': json.dumps(sorted(parts) or [1])}, reasons
 
 
 def main(argv):
