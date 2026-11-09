@@ -145,8 +145,17 @@ and portrait, and syncs with the Mac through the same CloudKit container.
 (`xcodebuild -downloadPlatform iOS`). It creates an iPhone 18 Pro simulator
 (`OPENLIST_IOS_DEVICE_TYPE` picks another), deletes it afterwards, verifies the
 built bundles and leaves its logs and `Tests.xcresult` in `build/ios`. CI runs it
-as the separate `ios` job. It builds with `CODE_SIGNING_ALLOWED=NO` and an empty
+in three `ios` jobs, each a part of the tests (`OPENLIST_IOS_PART=1/3` to `3/3`).
+It builds with `CODE_SIGNING_ALLOWED=NO` and an empty
 `ICLOUD_CONTAINER_ENVIRONMENT`, so the app runs local-only.
+
+CI runs only what a change needs, as `Tools/ci-scope.py` decides from the files
+it touches (`python3 Tools/ci-scope.py --files <path>...` shows its choice):
+documentation needs nothing, a Mac change skips the `ios` jobs, an iOS change
+runs only the check suites that compile iOS files, and `check` runs only the
+suites that name a changed file (all of them when it names none).
+`./Tools/check.sh <suite>...` runs named suites locally, and a manual run of the
+CI workflow runs everything.
 
 The iPhone companion compiles the same Model, Store and service sources as
 the Mac, listed in `Tools/iOS/shared-sources.txt`; its own replacements for
