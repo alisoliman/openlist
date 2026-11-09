@@ -84,8 +84,11 @@ extension XCUIApplication {
     func waitForScreenToClose(_ identifier: String, timeout: TimeInterval = 10,
                               file: StaticString = #filePath, line: UInt = #line) {
         let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: screen(identifier))
-        XCTAssertEqual(XCTWaiter().wait(for: [gone], timeout: timeout), .completed, "\(identifier) is still open",
-                       file: file, line: line)
+        guard XCTWaiter().wait(for: [gone], timeout: timeout) != .completed else { return }
+        // A dismissed sheet can linger in the accessibility tree after it has
+        // left the screen (a CI recording showed Today while Capture still
+        // "existed" ten seconds on); what can't be touched has closed.
+        XCTAssertFalse(screen(identifier).isHittable, "\(identifier) is still open", file: file, line: line)
     }
 
     /// Puts the tray's message away with a swipe down, as a person would
