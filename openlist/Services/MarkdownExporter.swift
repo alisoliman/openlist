@@ -214,9 +214,11 @@ enum MarkdownExporter {
             }
 
             if !block.note.isEmpty {
+                // A note is Markdown already: it goes under its line as it's
+                // written, inside the list item it belongs to.
                 lines.append("")
                 let noteIndent = isListItem ? indent + "  " : indent
-                lines.append(contentsOf: block.note.components(separatedBy: .newlines).map { "\(noteIndent)> \(InlineMarkdown.escape($0))" })
+                lines.append(contentsOf: block.note.components(separatedBy: .newlines).map { $0.isEmpty ? "" : noteIndent + $0 })
             }
             for attachment in store.attachments(for: block.id) {
                 let name = InlineMarkdown.escape(attachment.displayName.isEmpty ? "Attachment" : attachment.displayName)

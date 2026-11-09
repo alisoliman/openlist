@@ -221,26 +221,14 @@ final class Workbench {
     /// The lists in sidebar order as the window last drew them, for Task ▸
     /// Move to, which would otherwise fetch them on every menu update.
     @ObservationIgnored var drawnLists: [TaskList] = []
-    /// Tasks whose note shows under them in the list document, remembered on
-    /// this Mac.
-    var openNotes: Set<UUID> = [] {
-        didSet { if openNotes != oldValue { defaults?.set(openNotes.map(\.uuidString), forKey: Self.openNotesKey) } }
+    /// The task whose note takes the keyboard once its details show, from
+    /// ⇧↩ or Edit Note. The details take it up and clear it.
+    var noteWritingRequest: UUID? {
+        didSet { if noteWritingRequest != nil { noteWritingRequestedAt = .now } }
     }
-    /// The task whose note is being written in place.
-    var editingNoteID: UUID? {
-        didSet {
-            guard editingNoteID != nil, editingNoteID != oldValue else { return }
-            noteEditRequestedAt = .now
-            noteEdit &+= 1
-        }
-    }
-    /// Counts the notes started, so a note left and started again in one
-    /// update, as the note button does to an empty one, gets an editor of
-    /// its own, which takes the keyboard.
-    private(set) var noteEdit = 0
     /// When a note was last asked to take the keyboard, which it does a
     /// moment later, for the keys typed in between.
-    @ObservationIgnored private(set) var noteEditRequestedAt: Date?
+    @ObservationIgnored private(set) var noteWritingRequestedAt: Date?
     /// The inspector's note has the keyboard, where ⌘↩ finishes it as it
     /// finishes the list document's.
     var isWritingInspectorNote = false
@@ -260,7 +248,8 @@ final class Workbench {
     /// A section just made, whose name field the sidebar opens.
     var namingSectionID: UUID?
     @ObservationIgnored private let defaults: UserDefaults?
-    private static let openNotesKey = "nextOpenNotes"
+    /// Where an older build kept the notes shown under their tasks.
+    private static let retiredOpenNotesKey = "nextOpenNotes"
     private static let sidebarHiddenKey = "nextSidebarHidden"
     private static let sidebarFoldsKey = "nextSidebarFolds"
     private static func isSidebarGroup(_ key: String) -> Bool { key.hasPrefix("sec-") }
@@ -288,24 +277,25 @@ final class Workbench {
         if navigator.documentListID != list.id { pendingSubtaskParentID = nil }
     }
 
-    /// Space, or a task's note button: shows or hides its note under it. A
-    /// task with no note starts one instead. As the design's, only the note
-    /// fades in as it shows; the lines below move at once.
-    func toggleNote(_ id: UUID) {
+    /// ⇧↩, Edit Note or Add Note: the task's details open beside the screen,
+    /// or stay as the page they are, and its note takes the keyboard, the
+    /// caret at its end. The note is never written in the row.
+    func writeNote(_ id: UUID) {
         guard let task = store.block(id: id), task.isTask else { return }
-        if !openNotes.contains(id), task.note.isEmpty {
-            editNote(id)
-            return
-        }
-        if openNotes.contains(id) { openNotes.remove(id) } else { openNotes.insert(id) }
+        NXDocumentEditing.end()
+        clearSelection()
+        inspect(id)
+        noteWritingRequest = id
     }
 
-    /// Opens a task's note for writing in place, as ⇧↩ does from its title.
-    func editNote(_ id: UUID) {
-        openNotes.insert(id)
-        editingNoteID = id
-        focusID = id
-        clearSelection()
+    /// Space: shows the focused task's details beside the screen, or hides
+    /// them again, as Quick Look does in Finder.
+    func toggleDetails(_ id: UUID) {
+        if navigator.openTaskID == id {
+            navigator.closeTask()
+        } else {
+            inspect(id)
+        }
     }
 
     /// View ▸ Hide Sidebar, kept on this Mac. The shell also folds the
@@ -399,7 +389,8 @@ final class Workbench {
         self.settings = settings
         self.calendar = calendar
         self.defaults = defaults
-        openNotes = Set((defaults?.stringArray(forKey: Self.openNotesKey) ?? []).compactMap(UUID.init(uuidString:)))
+        // Notes no longer show under their tasks.
+        defaults?.removeObject(forKey: Self.retiredOpenNotesKey)
         // The sidebar as this Mac left it, hidden or with its groups folded.
         if restoresSidebar {
             isSidebarHidden = defaults?.bool(forKey: Self.sidebarHiddenKey) ?? false

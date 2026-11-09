@@ -181,7 +181,14 @@ struct AppCommands: Commands {
             // to the note, where an enabled one would take it first.
             Button("Open Details") { env.send(.openDetails) }
                 .keyboardShortcut(.return, modifiers: .command)
-                .disabled(single == nil || env.workbench.editingNoteID != nil || env.workbench.isWritingInspectorNote)
+                .disabled(single == nil || env.workbench.isWritingInspectorNote)
+            // The note is written in the details: ⇧↩ from a row or a line
+            // being written, which can't be a key here, as a menu would take
+            // it from every text field.
+            Button(single.map { $0.note.isEmpty } ?? true ? "Add Note" : "Edit Note") {
+                if let single { env.workbench.writeNote(single.id) }
+            }
+                .disabled(single == nil || keepsCapture || env.workbench.isWritingInspectorNote)
             // The open task over the whole main pane, and back beside the
             // screen; with none open, the one target opens there.
             Button(env.workbench.isTaskPageOpen ? "Collapse Details" : "Expand Details") {

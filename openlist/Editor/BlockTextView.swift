@@ -463,6 +463,11 @@ struct BlockTextView: NSViewRepresentable {
                     view.slashMenuCommand?(.confirm)
                     return true
                 }
+                // ⇧↩ has no binding of its own in macOS, so it arrives as
+                // Return: it's the line break the outline gives a task's note.
+                if BlockNSTextView.isShiftReturn(NSApp.currentEvent) {
+                    return self.textView(textView, doCommandBy: #selector(NSResponder.insertLineBreak(_:)))
+                }
                 // Return finishes the whole line, so a selection stays as it is.
                 return parent.callbacks.onReturn(selection.location, content)
 
@@ -591,6 +596,13 @@ struct LinkPrompt: Identifiable {
 /// `NSTextView` subclass that self-sizes, draws a placeholder, and exposes the
 /// formatting actions the app's Format menu sends down the responder chain.
 final class BlockNSTextView: NSTextView {
+    /// Return or Enter with Shift alone, which the key bindings leave to
+    /// Return's own `insertNewline:`.
+    static func isShiftReturn(_ event: NSEvent?) -> Bool {
+        guard let event, event.type == .keyDown, event.keyCode == 36 || event.keyCode == 76 else { return false }
+        return event.modifierFlags.intersection([.shift, .command, .option, .control]) == .shift
+    }
+
     weak var coordinator: BlockTextView.Coordinator?
     var blockKind: BlockKind = .paragraph
     var placeholderString: String = "" {

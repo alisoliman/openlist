@@ -303,6 +303,7 @@ struct NextInspector: View {
             let env = env
             clicks.install { env.workbench.captureOpen || env.navigator.isSearchOpen || env.navigator.isCommandPaletteOpen }
             if isPage { withAnimation(style.ease(260)) { appeared = true } }
+            takeNoteRequest()
         }
         .onChange(of: task.id) { _, _ in
             // The shell reuses this view for every task. A field being edited
@@ -315,7 +316,9 @@ struct NextInspector: View {
             commitNote()
             if picker?.taskID != task.id { picker = nil }
             load()
+            takeNoteRequest()
         }
+        .onChange(of: workbench.noteWritingRequest) { _, _ in takeNoteRequest() }
         .onChange(of: task.text) { _, _ in title.receive(Self.title(of: task)) }
         .onChange(of: task.note) { _, _ in note.receive(task.note) }
         .onChange(of: focus) { old, new in
@@ -446,6 +449,15 @@ struct NextInspector: View {
             workbench.setNote(edited, of: target)
         }
         note.reset(to: target.note)
+    }
+
+    /// ⇧↩, Edit Note or Add Note on this task: its note takes the keyboard,
+    /// the caret at its end, once the note is in the window.
+    private func takeNoteRequest() {
+        guard let requested = workbench.noteWritingRequest, requested == task.id else { return }
+        workbench.noteWritingRequest = nil
+        let fields = fields
+        DispatchQueue.main.async { fields.write(.note) }
     }
 
     /// ⇧⌘D and ⇧⌘L open their popover on the inspected task.
@@ -769,7 +781,7 @@ struct NextInspector: View {
 
     /// The task's body, always there to read or start, set as a page's text
     /// rather than in a field: 400 13.5/1.6 in the reading ink, or the
-    /// page's 14.5/1.65, with "Add notes…" while there's none. The room
+    /// page's 14.5/1.65, with "Add a note…" while there's none. The room
     /// under it is the note's too, as a page's, so a click there writes.
     private var noteBox: some View {
         NXInspectorText(role: .note, text: $note.value, large: isPage, caretColor: env.settings.accent.editorColor,

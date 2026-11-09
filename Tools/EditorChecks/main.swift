@@ -664,6 +664,16 @@ coordinator.parent.callbacks.onLineBreak = { false }
 input.setSelectedRange(NSRange(location: 6, length: 0))
 check(coordinator.textView(input, doCommandBy: #selector(NSResponder.insertLineBreak(_:))) && input.string == "Before\u{2028} DELETE After",
     "⇧↩ the outline declines still types a soft break")
+// macOS binds no key to ⇧↩, so it arrives as Return's insertNewline:.
+func returnKey(_ flags: NSEvent.ModifierFlags, code: UInt16 = 36) -> NSEvent? {
+    NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: flags, timestamp: 0, windowNumber: 0, context: nil,
+                     characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: code)
+}
+check(BlockNSTextView.isShiftReturn(returnKey(.shift)) && BlockNSTextView.isShiftReturn(returnKey(.shift, code: 76)),
+      "⇧↩ and ⇧Enter read as the line break Return's binding hides")
+check(!BlockNSTextView.isShiftReturn(returnKey([])) && !BlockNSTextView.isShiftReturn(returnKey([.shift, .command]))
+      && !BlockNSTextView.isShiftReturn(returnKey([.shift, .option])) && !BlockNSTextView.isShiftReturn(nil),
+      "Return, ⇧⌘↩ and ⇧⌥↩ stay what they are")
 
 coordinator.apply(RichTextCodec.decode(nil, plainText: "Line\u{2028}", kind: .task), to: input, kind: .task, isCompleted: false)
 _ = input.height(fittingWidth: 180)
