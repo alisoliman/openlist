@@ -57,19 +57,19 @@ final class CaptureTriageUITests: XCTestCase {
         app.waitForScreen("screen.capture")
         let field = app.textFields["capture.field"]
         XCTAssertTrue(field.waitForExistence(timeout: 5))
-        field.typeText("Order a doormat @Ho")
+        app.type("Order a doormat @Ho", into: field)
         let home = app.buttons["List Home"]
         XCTAssertTrue(home.waitForExistence(timeout: 5), "@ suggests the lists whose names start so")
         snap(app, "capture-list-suggestion")
         home.tap()
         XCTAssertEqual(field.value as? String, "Order a doormat @Home ")
-        field.typeText("\n")
+        app.type("\n", into: field)
         let added = app.screen("capture.added")
         XCTAssertTrue(added.waitForExistence(timeout: 5))
         XCTAssertEqual(added.label, "Added “Order a doormat” to Home")
         // An empty field reads its placeholder.
         XCTAssertEqual(field.value as? String, "New task", "Return clears the field for the next task")
-        field.typeText("Fix the gate latch\n")
+        app.type("Fix the gate latch\n", into: field)
         let second = NSPredicate(format: "label == %@", "Added “Fix the gate latch” to Home")
         XCTAssertEqual(XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: second, object: added)], timeout: 5), .completed,
                        "The next task goes to the same list")
@@ -89,7 +89,7 @@ final class CaptureTriageUITests: XCTestCase {
         app.waitForScreen("screen.capture")
         let field = app.textFields["capture.field"]
         XCTAssertTrue(field.waitForExistence(timeout: 5))
-        field.typeText("Buy sun cream")
+        app.type("Buy sun cream", into: field)
         let due = app.buttons["capture.dueDate"]
         XCTAssertEqual(due.value as? String, "Sun 27", "Sun reads as Sunday")
         due.tap()
@@ -100,7 +100,7 @@ final class CaptureTriageUITests: XCTestCase {
         app.buttons["capture.addNote"].tap()
         let note = app.textFields["capture.note"]
         XCTAssertTrue(note.waitForExistence(timeout: 5))
-        note.typeText("SPF 50, the blue tube")
+        app.type("SPF 50, the blue tube", into: note)
         snap(app, "capture-kept-and-note")
         app.screen("screen.capture").buttons["Add"].tap()
         app.waitForScreenToClose("screen.capture")
@@ -149,7 +149,7 @@ final class CaptureTriageUITests: XCTestCase {
         title.tap()
         let edit = app.textFields["triage.edit"]
         XCTAssertTrue(edit.waitForExistence(timeout: 5))
-        edit.typeText(" #travel @Home fri")
+        app.type(" #travel @Home fri", into: edit)
         snap(app, "triage-edit-line")
         app.buttons["triage.editDone"].tap()
         XCTAssertTrue(app.staticTexts["Gift ideas for Mika’s birthday"].waitForExistence(timeout: 5))
@@ -194,7 +194,7 @@ final class CaptureTriageUITests: XCTestCase {
         let search = app.searchFields.firstMatch
         XCTAssertTrue(search.waitForExistence(timeout: 5))
         search.tap()
-        search.typeText("read")
+        app.type("read", into: search)
         snap(app, "list-picker-search")
         let reading = picker.buttons["Reading"]
         XCTAssertTrue(reading.waitForExistence(timeout: 5))
