@@ -8,7 +8,7 @@ OUT=$(mktemp -d)
 trap 'rm -rf "$OUT"' EXIT
 
 # 1. Date and duration parsing, note Markdown, recurrence, the change log's writes and saved changes — Foundation only.
-xcrun swiftc \
+xcrun swiftc -wmo \
     -swift-version 6 -O \
     -o "$OUT/logic-checks" \
     openlist/Model/Recurrence.swift \
@@ -22,7 +22,7 @@ xcrun swiftc \
     Tools/LogicChecks/main.swift
 
 # 2. Rich-text splicing — needs AppKit and NXEditor's font metrics.
-xcrun swiftc \
+xcrun swiftc -wmo \
     -swift-version 6 -O \
     -o "$OUT/text-checks" \
     openlist/Model/BlockKind.swift \
@@ -32,7 +32,7 @@ xcrun swiftc \
     Tools/TextChecks/main.swift
 
 # 3. SwiftUI's text line, which the Next UI's line boxes are fitted over, and its word wrap — needs AppKit and SwiftUI.
-xcrun swiftc \
+xcrun swiftc -wmo \
     -swift-version 6 -O \
     -o "$OUT/line-height-checks" \
     openlist/Next/NextTextLine.swift \

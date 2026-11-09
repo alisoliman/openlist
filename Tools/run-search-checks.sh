@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 OUT=$(mktemp -d)
 trap 'rm -rf "$OUT"' EXIT
-xcrun swiftc -O -swift-version 6 -default-isolation MainActor -o "$OUT/search-checks" \
+xcrun swiftc -wmo -O -swift-version 6 -default-isolation MainActor -o "$OUT/search-checks" \
     openlist/Model/Block.swift openlist/Model/TrashMetadata.swift openlist/Model/BlockKind.swift openlist/Model/Recurrence.swift \
     openlist/Model/CalendarTypes.swift openlist/Model/ListCover.swift openlist/Model/TaskList.swift openlist/Model/ListHierarchy.swift openlist/Model/SidebarSection.swift \
     openlist/Model/SearchOptions.swift openlist/Model/SearchHit.swift openlist/Model/SearchCorpus.swift \

@@ -28,7 +28,7 @@ codesign -d --entitlements :- "$SOURCE_APP" > "$OUT/entitlements.plist" 2>"$OUT/
 }
 codesign -d --extract-certificates="$OUT/signing-" "$SOURCE_APP"
 IDENTITY=$(openssl x509 -inform DER -in "$OUT/signing-0" -noout -fingerprint -sha1 | cut -d= -f2 | tr -d ':')
-xcrun swiftc -swift-version 6 -default-isolation MainActor -parse-as-library \
+xcrun swiftc -wmo -swift-version 6 -default-isolation MainActor -parse-as-library \
   -target arm64-apple-macos27.0 -o "$APP/Contents/MacOS/CloudSyncChecks" \
   openlist/Model/*.swift Shared/ListAccent.swift Shared/ReviewSession.swift Shared/AppGroup.swift \
   openlist/Services/MediaStore.swift openlist/Services/BlockTree.swift openlist/Services/ICloudConfiguration.swift openlist/Services/ICloudError.swift \

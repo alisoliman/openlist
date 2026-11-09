@@ -3,9 +3,9 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 OUT=$(mktemp -d)
 trap 'rm -rf "$OUT"' EXIT
-xcrun swiftc -swift-version 6 -default-isolation MainActor -parse-as-library -o "$OUT/legacy-history-fixture" \
+xcrun swiftc -wmo -swift-version 6 -default-isolation MainActor -parse-as-library -o "$OUT/legacy-history-fixture" \
   Tools/TaskHistoryChecks/LegacyFixture.swift
-xcrun swiftc -swift-version 6 -default-isolation MainActor -o "$OUT/task-history-checks" \
+xcrun swiftc -wmo -swift-version 6 -default-isolation MainActor -o "$OUT/task-history-checks" \
   openlist/Model/*.swift Shared/ListAccent.swift Shared/ReviewSession.swift openlist/Next/NextEditorTypography.swift \
   openlist/Services/Store.swift openlist/Services/Store+Trash.swift openlist/Services/Store+Activity.swift openlist/Services/Store+Blocks.swift openlist/Services/Store+Copies.swift openlist/Services/Store+Sync.swift \
   openlist/Services/Store+Tasks.swift openlist/Services/Store+LabelMerge.swift openlist/Services/Store+Calendar.swift \

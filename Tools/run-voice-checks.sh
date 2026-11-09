@@ -7,7 +7,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 OUT=$(mktemp -d)
 trap 'rm -rf "$OUT"' EXIT
-xcrun swiftc -swift-version 6 -default-isolation MainActor -DDEBUG \
+xcrun swiftc -wmo -swift-version 6 -default-isolation MainActor -DDEBUG \
   -enable-upcoming-feature InferIsolatedConformances -enable-upcoming-feature NonisolatedNonsendingByDefault \
   -enable-upcoming-feature MemberImportVisibility -o "$OUT/voice-checks" \
   openlist/Model/*.swift Shared/ListAccent.swift Shared/ReviewSession.swift Shared/CompactText.swift openlist/Next/NextEditorTypography.swift \

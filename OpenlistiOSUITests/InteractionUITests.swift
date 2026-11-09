@@ -64,7 +64,8 @@ final class InteractionUITests: XCTestCase {
         field.typeText("zebra")
         let clear = app.buttons["Clear search"]
         XCTAssertTrue(clear.waitForExistence(timeout: 5))
-        XCTAssertFalse(include.exists, "No done task matches either")
+        // The search runs off the main thread: wait for its answer.
+        XCTAssertTrue(include.waitForNonExistence(timeout: 5), "No done task matches either")
         snapshot(app, "find-no-results")
         clear.tap()
         XCTAssertTrue(app.staticTexts["Type words, or add a #label, a list’s name, today, overdue, starred or done."]

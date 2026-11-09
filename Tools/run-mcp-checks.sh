@@ -36,7 +36,7 @@ else
     while IFS= read -r map; do FLAGS+=(-Xcc "-fmodule-map-file=$map"); done \
         < <(find "$BIN" -path '*/C*.build/module.modulemap' -type f)
 fi
-xcrun swiftc -swift-version 6 -default-isolation MainActor -enable-upcoming-feature MemberImportVisibility "${FLAGS[@]}" "${CHECK_FLAGS[@]}" -o "$OUT/mcp-store-checks" \
+xcrun swiftc -wmo -swift-version 6 -default-isolation MainActor -enable-upcoming-feature MemberImportVisibility "${FLAGS[@]}" "${CHECK_FLAGS[@]}" -o "$OUT/mcp-store-checks" \
     openlist/Model/*.swift Shared/ListAccent.swift Shared/AppGroup.swift Tools/MCPChecks/ReviewSession.swift openlist/Next/NextEditorTypography.swift \
     openlist/Services/Store.swift openlist/Services/Store+Trash.swift openlist/Services/Store+Activity.swift openlist/Services/Store+Blocks.swift openlist/Services/Store+Copies.swift openlist/Services/Store+Sync.swift \
     openlist/Services/Store+Tasks.swift openlist/Services/Store+LabelMerge.swift openlist/Services/Store+Calendar.swift openlist/Services/Store+CompletionUndo.swift openlist/Services/Store+Capture.swift \
@@ -49,7 +49,7 @@ xcrun swiftc -swift-version 6 -default-isolation MainActor -enable-upcoming-feat
     Tools/EditorChecks/Support.swift Tools/MCPChecks/HelperRoundTrip.swift Tools/MCPChecks/main.swift
 HELPER=${OPENLIST_MCP_HELPER:-"$OUT/openlist-mcp"}
 if [[ -z "${OPENLIST_MCP_HELPER:-}" ]]; then
-    xcrun swiftc -swift-version 6 -parse-as-library "${CHECK_FLAGS[@]}" -o "$HELPER" OpenlistMCPHelper/*.swift
+    xcrun swiftc -wmo -swift-version 6 -parse-as-library "${CHECK_FLAGS[@]}" -o "$HELPER" OpenlistMCPHelper/*.swift
 fi
 [[ -x "$HELPER" ]] || { echo "MCP helper is missing: $HELPER" >&2; exit 1; }
 FIXTURE_ID=$(uuidgen)

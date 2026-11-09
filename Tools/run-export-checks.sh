@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 OUT=$(mktemp -d)
 trap 'rm -rf "$OUT"' EXIT
-xcrun swiftc -swift-version 6 -O -o "$OUT/export-checks" \
+xcrun swiftc -wmo -swift-version 6 -O -o "$OUT/export-checks" \
     openlist/Model/BlockKind.swift \
     Shared/ListAccent.swift \
     openlist/Next/NextEditorTypography.swift \

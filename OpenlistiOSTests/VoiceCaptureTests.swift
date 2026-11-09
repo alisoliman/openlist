@@ -48,6 +48,19 @@ struct VoiceCaptureTests {
         #expect(press.end(inside: true) == .typed)
     }
 
+    /// A lift that beat the hold's timer, after the hold's time with the
+    /// finger in place, still says tasks, once.
+    @Test func aLateHoldStillSaysTasks() {
+        var press = CapturePress()
+        press.begin()
+        #expect(press.end(inside: true, heldLongEnough: true) == .voice)
+        press.begin()
+        #expect(press.recognizeHold() == .voice)
+        #expect(press.end(inside: true, heldLongEnough: true) == nil)
+        press.begin()
+        #expect(press.end(inside: false, heldLongEnough: true) == nil)
+    }
+
     @Test func cancelPreventsLateVoiceDelivery() async {
         let voice = VoiceCapture()
         var deliveries = 0

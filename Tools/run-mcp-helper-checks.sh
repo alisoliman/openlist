@@ -6,7 +6,7 @@ CHECK_DIR="Tools/MCPHelperChecks/.build-$$"
 mkdir "$CHECK_DIR"
 trap 'rm -rf -- "$CHECK_DIR"' EXIT
 export TMPDIR="$PWD/$CHECK_DIR"
-xcrun swiftc -swift-version 6 -warnings-as-errors -parse-as-library -O \
+xcrun swiftc -wmo -swift-version 6 -warnings-as-errors -parse-as-library -O \
     -target arm64-apple-macos27.0 \
     -module-cache-path "$CHECK_DIR/module-cache" \
     OpenlistMCPHelper/*.swift -o "$CHECK_DIR/openlist-mcp"

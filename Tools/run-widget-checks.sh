@@ -7,7 +7,7 @@ trap 'rm -rf "$OUT" "${TMPDIR:-/tmp}/OpenlistUIReviews/WidgetChecks-$FIXTURE"' E
 
 # The widget target's own concurrency settings, so isolation mistakes that
 # Xcode would reject fail here too.
-xcrun swiftc -swift-version 6 -default-isolation MainActor \
+xcrun swiftc -wmo -swift-version 6 -default-isolation MainActor \
     -enable-upcoming-feature InferIsolatedConformances -enable-upcoming-feature NonisolatedNonsendingByDefault \
     -enable-upcoming-feature MemberImportVisibility -target arm64-apple-macos27.0 \
     -o "$OUT/widget-checks" \

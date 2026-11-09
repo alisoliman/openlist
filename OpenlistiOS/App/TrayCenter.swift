@@ -25,6 +25,8 @@ struct TrayMessage: Identifiable, Equatable {
     var actionTitle: String?
     /// When it appeared, so a view drawn later drains from the right place.
     var shownAt: Date = .now
+    /// Whether it stays until dismissed or replaced, with no drain.
+    var stays = false
 
     static func == (lhs: TrayMessage, rhs: TrayMessage) -> Bool { lhs.id == rhs.id }
 }
@@ -37,6 +39,23 @@ final class TrayCenter {
     private(set) var message: TrayMessage?
     @ObservationIgnored private var action: (() -> Void)?
     @ObservationIgnored private var expiry: Task<Void, Never>?
+    /// Whether messages stay until dismissed or replaced, rather than for
+    /// their seconds. UI tests ask for it, as a loaded simulator can take
+    /// longer than a message's seconds to reach its Undo.
+    let messagesStay: Bool
+
+    init(messagesStay: Bool = TrayCenter.launchAsksMessagesToStay) {
+        self.messagesStay = messagesStay
+    }
+
+    /// `OpenlistTraysStay=1` in a Debug review session's launch environment.
+    nonisolated static var launchAsksMessagesToStay: Bool {
+        #if DEBUG
+        ReviewSession.identifier != nil && ProcessInfo.processInfo.environment["OpenlistTraysStay"] == "1"
+        #else
+        false
+        #endif
+    }
 
     /// Shows `text` for `seconds`. `action` runs if the button is tapped while
     /// it's on show (`actionTitle` defaults to "Undo" when there is one).
@@ -46,10 +65,12 @@ final class TrayCenter {
         // With VoiceOver, reaching the button takes longer than a glance.
         let seconds = action != nil && UIAccessibility.isVoiceOverRunning ? max(seconds, 20) : seconds
         let message = TrayMessage(text: text, icon: icon, tone: tone, seconds: seconds,
-                                  actionTitle: action == nil ? nil : actionTitle ?? "Undo")
+                                  actionTitle: action == nil ? nil : actionTitle ?? "Undo", stays: messagesStay)
         self.message = message
         self.action = action
         expiry?.cancel()
+        expiry = nil
+        guard !messagesStay else { return message }
         expiry = Task { [weak self] in
             try? await Task.sleep(for: .seconds(seconds))
             guard !Task.isCancelled else { return }

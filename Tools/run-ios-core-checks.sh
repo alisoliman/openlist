@@ -45,7 +45,7 @@ for target in OpenlistiOS OpenlistiOSWidget OpenlistiOSShare; do
     # Debug, Dev and Release compilation conditions (see the project's configurations).
     for conditions in "-DDEBUG" "-DDEBUG -DOPENLIST_DEV" ""; do
         # shellcheck disable=SC2086
-        xcrun swiftc "${FLAGS[@]}" $conditions "${SOURCES[@]}"
+        xcrun swiftc -wmo "${FLAGS[@]}" $conditions "${SOURCES[@]}"
     done
     echo "Type-checked ${#SOURCES[@]} $target sources for iOS in Debug, Dev and Release"
 done

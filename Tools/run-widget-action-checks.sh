@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 OUT=$(mktemp -d)
 trap 'rm -rf "$OUT"' EXIT
-xcrun swiftc -swift-version 6 -default-isolation MainActor -o "$OUT/widget-action-checks" \
+xcrun swiftc -wmo -swift-version 6 -default-isolation MainActor -o "$OUT/widget-action-checks" \
   openlist/Model/*.swift Shared/ListAccent.swift Shared/WidgetSnapshot.swift Shared/WidgetCommand.swift Shared/WidgetLink.swift Shared/WidgetKind.swift \
   Tools/WidgetActionChecks/ReviewSession.swift openlist/Next/NextEditorTypography.swift \
   openlist/Services/Store.swift openlist/Services/Store+Trash.swift openlist/Services/Store+Activity.swift openlist/Services/Store+Blocks.swift openlist/Services/Store+Copies.swift openlist/Services/Store+Sync.swift \

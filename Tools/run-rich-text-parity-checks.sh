@@ -7,7 +7,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 OUT=$(mktemp -d)
 trap 'rm -rf "$OUT"' EXIT
-xcrun swiftc -swift-version 6 -default-isolation MainActor -o "$OUT/rich-text-parity-checks" \
+xcrun swiftc -wmo -swift-version 6 -default-isolation MainActor -o "$OUT/rich-text-parity-checks" \
   openlist/Model/BlockKind.swift openlist/Next/NextEditorTypography.swift openlist/Services/RichTextCodec.swift \
   Tools/RichTextParityChecks/Samples.swift Tools/RichTextParityChecks/main.swift
 "$OUT/rich-text-parity-checks" "$@"

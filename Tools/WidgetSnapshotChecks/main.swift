@@ -6,6 +6,13 @@ func check(_ value: @autoclosure () -> Bool, _ message: String) {
     checks += 1
     guard value() else { fatalError("FAIL: \(message)") }
 }
+/// Runs the main run loop until `condition` holds, for up to `seconds`: what
+/// a timer or notification does lands when it lands on a busy machine.
+func runMainLoop(for seconds: TimeInterval = 10, until condition: () -> Bool) -> Bool {
+    let deadline = Date.now.addingTimeInterval(seconds)
+    while !condition(), Date.now < deadline { RunLoop.main.run(until: .now.addingTimeInterval(0.02)) }
+    return condition()
+}
 
 var calendar = Calendar.current
 calendar.firstWeekday = 2
@@ -600,16 +607,18 @@ let held = WidgetSnapshotPublisher(store: store, sources: planOnly)
 var heldReloads: [WidgetSnapshotPublisher.Reload] = []
 held.reloadTimelines = { heldReloads.append($0) }
 held.planReloadInterval = 0.3
-held.refreshNow()
+// The changes come at stated moments, so a busy machine's pauses between
+// them don't stretch them past the interval.
+let reloadedAt = Date.now
+held.refreshNow(now: reloadedAt)
 // Whole seconds, as the file's ISO 8601 dates keep them.
 let meetingStart = Date(timeIntervalSinceReferenceDate: Date.now.timeIntervalSinceReferenceDate.rounded(.up) + 3600)
 agenda = [WidgetSnapshot.AgendaEvent(id: "sync", kind: .meeting, title: "Sync", start: meetingStart, end: meetingStart.addingTimeInterval(1800))]
-held.refreshNow()
+held.refreshNow(now: reloadedAt.addingTimeInterval(0.01))
 agenda[0].start = meetingStart.addingTimeInterval(300)
-held.refreshNow()
+held.refreshNow(now: reloadedAt.addingTimeInterval(0.02))
 check(heldReloads == [.all] && WidgetSnapshotStore.read()?.agenda == agenda, "plan changes soon after a reload are written but held back")
-RunLoop.main.run(until: Date.now.addingTimeInterval(0.8))
-check(heldReloads == [.all, .plan], "then reload Up Next and Agenda once")
+check(runMainLoop(until: { heldReloads.count > 1 }) && heldReloads == [.all, .plan], "then reload Up Next and Agenda once")
 
 // MARK: - Day change
 
@@ -625,8 +634,8 @@ overnight.refreshNow()
 check(overnightReloads == [.all], "the fixture's snapshot is unchanged from one refresh to the next")
 let dayChangedAt = Date.now
 NotificationCenter.default.post(name: .NSCalendarDayChanged, object: nil)
-RunLoop.main.run(until: Date.now.addingTimeInterval(0.1))
-check(overnightReloads == [.all, .all], "a day change rewrites and reloads an unchanged snapshot")
+check(runMainLoop(until: { overnightReloads.count > 1 }) && overnightReloads == [.all, .all],
+      "a day change rewrites and reloads an unchanged snapshot")
 check(WidgetSnapshotStore.read().map { abs($0.generatedAt.timeIntervalSince(dayChangedAt)) < 2 } == true,
       "so the file is stamped with the new day")
 

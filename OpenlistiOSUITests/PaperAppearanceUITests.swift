@@ -211,18 +211,28 @@ final class PaperAppearanceUITests: XCTestCase {
         // Accessibility can report a partially visible row as hittable even
         // when its tap point is under the floating dock. Reveal the whole
         // control before touching it, as a person scrolling the page would.
-        func isFullyVisible() -> Bool {
-            guard element.exists, element.isHittable else { return false }
-            let frame = element.frame
-            var viewport = app.frame
-            let dock = app.dock("capture")
-            if dock.exists {
-                viewport.size.height = min(viewport.maxY, dock.frame.minY) - viewport.minY
-            }
-            return !frame.isEmpty && viewport.contains(frame)
+        var view = app.frame
+        let dock = app.dock("capture")
+        if dock.exists {
+            view.size.height = min(view.maxY, dock.frame.minY) - view.minY
         }
-        for _ in 0..<18 where !isFullyVisible() { app.swipeUp() }
-        XCTAssertTrue(isFullyVisible(), "The whole control must be visible above the dock before tapping: \(element.frame)")
+        // A swipe's fling can carry a large-type control from below the
+        // screen to above it between looks. These drags stop before lifting,
+        // so the page moves by the drag alone, never so far that the control
+        // could pass the screen unseen, and back if it's above.
+        let centre = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
+        let reach = view.height / 2 - 60
+        for _ in 0..<30 {
+            let frame = element.exists ? element.frame : .zero
+            if !frame.isEmpty, view.contains(frame), element.isHittable { return }
+            let step = frame.isEmpty ? reach : min(reach, max(60, view.height - frame.height - 40))
+            let distance = !frame.isEmpty && frame.minY < view.minY
+                ? min(step, view.minY - frame.minY + 16)
+                : -min(step, frame.isEmpty ? step : max(60, frame.maxY - view.maxY + 16))
+            centre.press(forDuration: 0.05, thenDragTo: centre.withOffset(CGVector(dx: 0, dy: distance)),
+                         withVelocity: .fast, thenHoldForDuration: 0.25)
+        }
+        XCTFail("The whole control must be visible above the dock before tapping: \(element.frame)")
     }
 
     @MainActor

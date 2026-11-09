@@ -95,6 +95,8 @@ final class ScreensUITests: XCTestCase {
         XCTAssertFalse(app.buttons.matching(identifier: "plan.chip").matching(NSPredicate(format: "label BEGINSWITH %@", title))
             .firstMatch.exists, "A planned task leaves the row")
         snap(app, "timeline-dropped")
+        // The message sits over the card's last hours, where the next drop goes.
+        app.dismissTray()
         let block = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Write interview feedback for Priya, 11:30'")).firstMatch
         XCTAssertTrue(block.exists)
         block.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5))
@@ -398,6 +400,8 @@ final class ScreensUITests: XCTestCase {
         XCTAssertTrue(undated.waitForExistence(timeout: 5))
         XCTAssertTrue(undated.isHittable)
         snap(app, "inbox-empty-undated")
+        // The last delete's message covers the link on an empty Inbox.
+        app.dismissTray()
         undated.tap()
         app.waitForScreen("screen.triage")
         XCTAssertTrue(app.buttons["triage.mode.undated"].isSelected)

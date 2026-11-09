@@ -7,8 +7,31 @@
 #   OPENLIST_IOS_DERIVED_DATA  DerivedData directory (default build/ios/DerivedData)
 #   OPENLIST_SPM_DIR           shared SwiftPM checkouts (default: inside DerivedData)
 #   OPENLIST_IOS_UDID          existing simulator to test on (default: a throwaway one)
+#   OPENLIST_IOS_PART          run one part of the tests, 1/3, 2/3 or 3/3, as CI's three
+#                              ios jobs do (default: all of them)
 set -euo pipefail
 cd "$(dirname "$0")/.."
+# The UI test classes of the first two parts, about a third of the suite's
+# time each, the unit tests going with the first. The third part runs every
+# other UI test class, so a new class always runs somewhere.
+PART1=(ScreensUITests TaskSwipeUITests TaskDueMenuUITests ListAppearanceUITests LaunchTests)
+PART2=(InteractionUITests PaperAppearanceUITests CaptureTriageUITests TaskDetailContextUITests ShellUITests)
+SELECT=()
+BUNDLES="OpenlistiOSTests OpenlistiOSUITests"
+case "${OPENLIST_IOS_PART:-}" in
+    "") ;;
+    1/3)
+        SELECT=(-only-testing:OpenlistiOSTests)
+        for class in "${PART1[@]}"; do SELECT+=("-only-testing:OpenlistiOSUITests/$class"); done ;;
+    2/3)
+        BUNDLES=OpenlistiOSUITests
+        for class in "${PART2[@]}"; do SELECT+=("-only-testing:OpenlistiOSUITests/$class"); done ;;
+    3/3)
+        BUNDLES=OpenlistiOSUITests
+        SELECT=(-only-testing:OpenlistiOSUITests)
+        for class in "${PART1[@]}" "${PART2[@]}"; do SELECT+=("-skip-testing:OpenlistiOSUITests/$class"); done ;;
+    *) echo "OPENLIST_IOS_PART must be 1/3, 2/3 or 3/3" >&2; exit 1 ;;
+esac
 RUNTIME=com.apple.CoreSimulator.SimRuntime.iOS-27-0
 DEVICE_TYPE=${OPENLIST_IOS_DEVICE_TYPE:-com.apple.CoreSimulator.SimDeviceType.iPhone-18-Pro}
 OUT=build/ios
@@ -25,23 +48,41 @@ if [[ -n "${OPENLIST_IOS_UDID:-}" ]]; then
 else
     UDID=$(xcrun simctl create "Openlist iOS Checks $$" "$DEVICE_TYPE" "$RUNTIME")
     trap 'xcrun simctl shutdown "$UDID" >/dev/null 2>&1 || true; xcrun simctl delete "$UDID" >/dev/null 2>&1 || true' EXIT
+    # Booted before the build, not beside it: a new runner takes minutes to
+    # boot a fresh simulator, and the two together slowed the build fivefold.
+    SECONDS=0
+    xcrun simctl bootstatus "$UDID" -b > "$OUT/boot.log" 2>&1 || { tail -20 "$OUT/boot.log"; exit 1; }
+    echo "Booted the simulator in $((SECONDS / 60)) min $((SECONDS % 60)) s"
 fi
 COMMON=(-project openlist.xcodeproj -scheme OpenlistiOS -configuration Debug
     -destination "id=$UDID" -derivedDataPath "$DERIVED"
     CODE_SIGNING_ALLOWED=NO ICLOUD_CONTAINER_ENVIRONMENT=)
 if [[ -n "${OPENLIST_SPM_DIR:-}" ]]; then COMMON+=(-clonedSourcePackagesDirPath "$OPENLIST_SPM_DIR"); fi
+SECONDS=0
 xcodebuild "${COMMON[@]}" build-for-testing > "$OUT/build.log" 2>&1 || { tail -100 "$OUT/build.log"; exit 1; }
+echo "Built the app and its tests in $((SECONDS / 60)) min $((SECONDS % 60)) s"
+# From the build's .xctestrun, as the project would have xcodebuild resolve
+# its Swift packages again at every launch of the app.
+XCTESTRUN=$(ls -t "$DERIVED"/Build/Products/*.xctestrun | sed -n 1p)
 # The scheme marks the UI tests serial; turning parallel testing off also
 # avoids cloning the simulator for the unit tests.
 # A test that fails is run once more, as a loaded runner can time out
 # driving the simulator; one that fails twice fails the check. The result
 # bundle has what a failure needs, so no sysdiagnose (ten minutes a failure).
-xcodebuild "${COMMON[@]}" -parallel-testing-enabled NO -retry-tests-on-failure -test-iterations 2 \
+SECONDS=0
+# Each test's result also goes to the output as it lands, so a run that
+# stops short still says how far it got. (Bash 3.2's nounset rejects an
+# empty array's expansion, hence the guard.)
+xcodebuild -xctestrun "$XCTESTRUN" -destination "id=$UDID" ${SELECT[@]+"${SELECT[@]}"} \
+    -parallel-testing-enabled NO -retry-tests-on-failure -test-iterations 2 \
     -collect-test-diagnostics never \
-    -resultBundlePath "$OUT/Tests.xcresult" test-without-building > "$OUT/test.log" 2>&1 || { tail -100 "$OUT/test.log"; exit 1; }
+    -resultBundlePath "$OUT/Tests.xcresult" test-without-building 2>&1 | tee "$OUT/test.log" \
+    | grep --line-buffered -E "^Test Case .*(passed|failed) \(|: error: -\[" | sed -l -E "s/^Test Case '-\[[A-Za-z]+\.//" \
+    || { tail -100 "$OUT/test.log"; exit 1; }
+echo "Ran the tests${OPENLIST_IOS_PART:+ of part $OPENLIST_IOS_PART} in $((SECONDS / 60)) min $((SECONDS % 60)) s"
 xcrun xcresulttool get test-results tests --path "$OUT/Tests.xcresult" --compact > "$OUT/tests.json"
 APP="$DERIVED/Build/Products/Debug-iphonesimulator/OpenlistiOS.app"
-python3 - "$APP" "$OUT/tests.json" <<'PY'
+python3 - "$APP" "$OUT/tests.json" "$BUNDLES" <<'PY'
 import json, plistlib, sys
 from pathlib import Path
 app, results = Path(sys.argv[1]), json.loads(Path(sys.argv[2]).read_text())
@@ -61,12 +102,16 @@ def repetitions(case):
 def succeeded(case):
     runs = repetitions(case)
     return case.get('result') == 'Passed' or (bool(runs) and runs[-1].get('result') == 'Passed')
-passed = retried = 0
-for name in ('OpenlistiOSTests', 'OpenlistiOSUITests'):
+passed = 0
+retried = []
+for name in sys.argv[3].split():
     ran = cases(bundles[name]) if name in bundles else []
     require(ran and all(succeeded(case) for case in ran), f'{name} ran no tests or did not pass')
     passed += len(ran)
-    retried += sum(1 for case in ran if len(repetitions(case)) > 1)
+    retried += [case.get('nodeIdentifier') or case['name'] for case in ran if len(repetitions(case)) > 1]
+# Each needed its second run: a flaky test, to be made deterministic.
+for case in retried:
+    print(f'Passed only on its second run: {case}')
 
 info = plistlib.loads((app / 'Info.plist').read_bytes())
 require(info['CFBundleIdentifier'] == 'solimanali.openlist.ios', 'app identifier')
@@ -105,6 +150,6 @@ require((share / 'PrivacyInfo.xcprivacy').is_file(), 'share extension privacy ma
 # build-for-testing also copies the hosted unit tests into PlugIns.
 require(sorted(p.name for p in (app / 'PlugIns').glob('*.appex')) == ['OpenlistiOSShare.appex', 'OpenlistiOSWidget.appex'],
         'only the widget and the share extension are embedded')
-again = f' ({retried} on a second run)' if retried else ''
+again = f' ({len(retried)} on a second run)' if retried else ''
 print(f'{passed} iOS tests passed{again}; verified the iPhone-only iOS 27 app, its widget and its share extension')
 PY
