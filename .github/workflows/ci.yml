@@ -16,14 +16,16 @@ jobs:
     # What the change needs (Tools/ci-scope.py), decided on a Linux runner,
     # which takes none of the account's five macOS ones: documentation needs
     # nothing, a Mac change no ios jobs, an iOS change only the check suites
-    # that compile iOS files, and check only the suites that name a changed
-    # file. A manual run runs everything.
+    # that compile iOS files, a test change only its iOS part, and check only
+    # the suites that name a changed file. A manual run runs everything.
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       check: ${{ steps.scope.outputs.check }}
       suites: ${{ steps.scope.outputs.suites }}
+      release: ${{ steps.scope.outputs.release }}
       ios: ${{ steps.scope.outputs.ios }}
+      parts: ${{ steps.scope.outputs.parts }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -69,10 +71,10 @@ jobs:
         env:
           SUITES: ${{ needs.scope.outputs.suites }}
       - name: Build and verify Apple Silicon app and widget
-        if: needs.scope.outputs.check == 'full'
+        if: needs.scope.outputs.release == 'true'
         run: ./Tools/build-release.sh 0.1.0 "$GITHUB_RUN_NUMBER"
       - name: Build log
-        if: always() && needs.scope.outputs.check == 'full'
+        if: always() && needs.scope.outputs.release == 'true'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: build-log
@@ -87,7 +89,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        part: [1, 2, 3]
+        part: ${{ fromJSON(needs.scope.outputs.parts) }}
     # 23 to 38 minutes: the build, the simulator's boot, then a part of the
     # tests. Room for a slow runner and a test's second run, while a hung
     # test still ends well before the old single job's 75.

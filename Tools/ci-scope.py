@@ -1,26 +1,33 @@
 #!/usr/bin/env python3
-"""Decides which CI jobs a change needs, from the files it touches.
+"""Decides what CI runs for a change, from the files it touches.
 
     ci-scope.py <base> <head>      the files changed between two commits
     ci-scope.py --files <path>...  the given paths, to try the rules out
 
-Prints GitHub step outputs: `check` (full, ios or none), `suites` (the
-check suites an iOS-only change needs) and `ios` (true or false), then why.
+Prints GitHub step outputs, then why:
+  check     full, ios or none: the check job, all it can do or only suites
+  suites    the check suites to run; none listed means all of them
+  release   true when the Mac app's release build is worth checking
+  ios       true when the iOS jobs run
+  parts     which of the three iOS parts run, as JSON
 
 - Documentation needs nothing.
 - CI's own definition, the project, the packages, Config/, Shared/ and every
   Mac file the iOS targets also compile (Tools/iOS/shared-sources.txt) need
   everything.
 - The iOS targets' own folders need the iOS jobs, and from `check` only the
-  suites that compile iOS files; the iOS tests and their runner need only
-  the iOS jobs.
-- Anything else is the Mac's: `check` in full, no iOS jobs.
+  suites that compile iOS files. The iOS tests need only their own part:
+  unit tests run in the first; a UI test class in the part that names it,
+  unless its file also declares helpers other classes use.
+- Anything else is the Mac's: `check` without the iOS jobs, and the release
+  build unless only check suites and their scripts changed.
 
 A full `check` runs only the suites whose scripts name a changed file (as a
 path, a glob, a folder they search or one of their own helpers), unless a
 changed file is one no suite names, or CI's own definition: then all of them.
 """
 import fnmatch
+import json
 import re
 import subprocess
 import sys
@@ -31,23 +38,13 @@ ROOT = Path(__file__).resolve().parent.parent
 DOCS = re.compile(r'(^|/)[^/]+\.md$|^docs/|^LICENSE$|^\.gitignore$')
 # CI's own definition: every job, every suite.
 CI = re.compile(r'^(\.github/workflows/ci\.yml|Tools/ci-scope\.py|Tools/check\.sh)$')
-EVERYTHING = re.compile(r'^(\.github/workflows/ci\.yml|Tools/ci-scope\.py|Tools/check\.sh|openlist\.xcodeproj/'
-                        r'|Package\.(swift|resolved)$|Config/|Shared/|Tools/iOS/|Tools/ios-sources\.py'
-                        r'|Tools/add-ios-targets\.py)')
-IOS_ONLY = re.compile(r'^(OpenlistiOS|OpenlistiOSWidget|OpenlistiOSShare|SharediOS)/')
-# The iOS tests and their runner, which no check suite compiles.
-IOS_TESTS = re.compile(r'^(OpenlistiOSTests|OpenlistiOSUITests)/|^Tools/run-ios-checks\.sh$')
-
-
-def shared_with_ios():
-    """The Mac files the iOS targets also compile, each a path or a folder."""
-    paths = []
-    for line in (ROOT / 'Tools/iOS/shared-sources.txt').read_text().splitlines():
-        fields = line.split()
-        if len(fields) == 3 and not line.startswith('#'):
-            paths.append(f'{fields[1]}/{fields[2]}')
-    return paths
-
+SHARED = re.compile(r'^(openlist\.xcodeproj/|Package\.(swift|resolved)$|Config/|Shared/|Tools/iOS/'
+                    r'|Tools/ios-sources\.py$|Tools/add-ios-targets\.py$)')
+IOS_APP = re.compile(r'^(OpenlistiOS|OpenlistiOSWidget|OpenlistiOSShare|SharediOS)/')
+UNIT_TESTS = re.compile(r'^OpenlistiOSTests/')
+UI_TESTS = re.compile(r'^OpenlistiOSUITests/(\w+)\.swift$')
+# Check suites and what only they read: no release build for these.
+CHECKS_ONLY = re.compile(r'^Tools/(run-[a-z-]+-checks\.sh$|\w+Checks/)')
 
 ROOTS = r'(?:openlist|Shared|SharediOS|OpenlistiOS\w*|OpenlistWidget|OpenlistMCPHelper|MCPTransport|Tools|Config)'
 PATH_TOKEN = re.compile(r'(?<![\w$/.-])(' + ROOTS + r'(?:/[\w+./*-]*)?)')
@@ -58,8 +55,17 @@ UNNAMED = {
     'mcp': ['MCPTransport/', 'Tools/MCPTransportTests/', 'Package.swift', 'Package.resolved'],
     'mcp-helper': ['Tools/verify-release.sh'],
     'signing': ['Tools/prepare-release-signing.py'],
-    'ios-core': ['OpenlistiOS/', 'OpenlistiOSWidget/', 'OpenlistiOSShare/', 'SharediOS/', 'Shared/', 'openlist/Model/'],
 }
+
+
+def shared_with_ios():
+    """The Mac files the iOS targets also compile, each a path or a folder."""
+    paths = []
+    for line in (ROOT / 'Tools/iOS/shared-sources.txt').read_text().splitlines():
+        fields = line.split()
+        if len(fields) == 3 and not line.startswith('#'):
+            paths.append(f'{fields[1]}/{fields[2]}')
+    return paths
 
 
 def all_suites():
@@ -80,7 +86,9 @@ def references(suite, seen=None):
     refs = [script] + UNNAMED.get(suite, [])
     if suite == 'ios-core':
         # Its paths are patterns over what Tools/ios-sources.py lists.
-        return refs + shared_with_ios() + ['Tools/ios-sources.py', 'Tools/add-ios-targets.py', 'Tools/iOS/']
+        return refs + shared_with_ios() + ['OpenlistiOS/', 'OpenlistiOSWidget/', 'OpenlistiOSShare/', 'SharediOS/',
+                                           'Shared/', 'openlist/Model/', 'Tools/ios-sources.py',
+                                           'Tools/add-ios-targets.py', 'Tools/iOS/']
     for token in PATH_TOKEN.findall(text) + [d for m in FIND_ROOTS.findall(text) for d in m.split()]:
         token = token.rstrip('/.')
         if not token or '$' in token:
@@ -107,58 +115,83 @@ def names(ref, path):
 
 
 def suites_naming(files):
-    """The suites a change needs, in check.sh's order, or None for all."""
+    """The suites these files need, in check.sh's order, or [] for all."""
     suites = all_suites()
     refs = {suite: references(suite) for suite in suites}
     needed = set()
     for path in files:
         if CI.search(path):
-            return None
+            return []
         naming = {suite for suite in suites if any(names(ref, path) for ref in refs[suite])}
         if not naming:
-            return None
+            return []
         needed |= naming
     return [suite for suite in suites if suite in needed]
 
 
 def suites_reading_ios():
     """The check suites whose scripts compile files from the iOS targets."""
-    names = []
-    for script in sorted((ROOT / 'Tools').glob('run-*-checks.sh')):
-        name = script.name[len('run-'):-len('-checks.sh')]
-        if name != 'ios' and re.search(r'\b(OpenlistiOS\w*|SharediOS)/|ios-sources\.py', script.read_text()):
-            names.append(name)
-    return names
+    found = []
+    for suite in all_suites():
+        text = (ROOT / f'Tools/run-{suite}-checks.sh').read_text()
+        if suite == 'ios-core' or re.search(r'\b(OpenlistiOS\w*|SharediOS)/', text):
+            found.append(suite)
+    return found
+
+
+def ui_test_part(path):
+    """The iOS part that runs a UI test class's file, or None when the file
+    may hold what other classes use."""
+    match = UI_TESTS.match(path)
+    if not match or not (ROOT / path).exists():
+        return None
+    # Anything declared outside the class, such as an extension, is shared.
+    if re.search(r'^(extension|func|struct|enum|let|var)\b', (ROOT / path).read_text(), re.M):
+        return None
+    runner = (ROOT / 'Tools/run-ios-checks.sh').read_text()
+    for part in (1, 2):
+        listed = re.search(rf'^PART{part}=\(([^)]*)\)', runner, re.M).group(1).split()
+        if match.group(1) in listed:
+            return part
+    return 3
 
 
 def scope(files):
     shared = shared_with_ios()
-    needs_mac = needs_ios = needs_ios_suites = False
+    mac, release, ios_suites = [], False, False
+    parts = set()
     reasons = []
     for path in files:
         if DOCS.search(path):
             continue
-        if EVERYTHING.search(path) or any(path == s or path.startswith(s + '/') for s in shared):
-            needs_mac = needs_ios = True
+        if CI.search(path) or SHARED.search(path) or any(names(s, path) for s in shared):
+            mac.append(path)
+            release = True
+            parts |= {1, 2, 3}
             reasons.append(f'{path}: shared or CI')
-        elif IOS_ONLY.search(path):
-            needs_ios = needs_ios_suites = True
+        elif IOS_APP.search(path):
+            ios_suites = True
+            parts |= {1, 2, 3}
             reasons.append(f'{path}: iOS')
-        elif IOS_TESTS.search(path):
-            needs_ios = True
-            reasons.append(f'{path}: iOS tests')
+        elif UNIT_TESTS.search(path):
+            parts.add(1)
+            reasons.append(f'{path}: iOS unit tests')
+        elif path.startswith('OpenlistiOSUITests/') or path == 'Tools/run-ios-checks.sh':
+            part = ui_test_part(path)
+            parts |= {part} if part else {1, 2, 3}
+            reasons.append(f'{path}: iOS UI tests, part {part or "all"}')
         else:
-            needs_mac = True
+            mac.append(path)
+            release = release or not CHECKS_ONLY.search(path)
             reasons.append(f'{path}: Mac')
-    check = 'full' if needs_mac else 'ios' if needs_ios_suites else 'none'
-    if check == 'ios':
-        suites = suites_reading_ios()
-    elif check == 'full':
-        checked = [path for path in files if not DOCS.search(path) and not IOS_TESTS.search(path)]
-        suites = suites_naming(checked) or []
+    if mac:
+        check, suites = 'full', suites_naming(mac)
+    elif ios_suites:
+        check, suites = 'ios', suites_reading_ios()
     else:
-        suites = []
-    return check, suites, needs_ios, reasons
+        check, suites = 'none', []
+    return {'check': check, 'suites': ' '.join(suites), 'release': str(release).lower(),
+            'ios': str(bool(parts)).lower(), 'parts': json.dumps(sorted(parts))}, reasons
 
 
 def main(argv):
@@ -172,14 +205,12 @@ def main(argv):
     else:
         # No base to compare with (a manual run, a new branch): everything.
         files = ['.github/workflows/ci.yml']
-    check, suites, ios, reasons = scope(files)
-    print(f'check={check}')
-    print(f'suites={" ".join(suites)}')
-    print(f'ios={"true" if ios else "false"}')
+    outputs, reasons = scope(files)
+    for key, value in outputs.items():
+        print(f'{key}={value}')
     for reason in reasons[:40]:
         print(reason, file=sys.stderr)
-    print(f'{len(files)} files changed: check {check}{" (" + " ".join(suites) + ")" if suites else ""}, '
-          f'iOS jobs {"yes" if ios else "no"}', file=sys.stderr)
+    print(f'{len(files)} files changed: ' + ', '.join(f'{k} {v}' for k, v in outputs.items()), file=sys.stderr)
     return 0
 
 

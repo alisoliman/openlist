@@ -150,12 +150,13 @@ It builds with `CODE_SIGNING_ALLOWED=NO` and an empty
 `ICLOUD_CONTAINER_ENVIRONMENT`, so the app runs local-only.
 
 CI runs only what a change needs, as `Tools/ci-scope.py` decides from the files
-it touches (`python3 Tools/ci-scope.py --files <path>...` shows its choice):
-documentation needs nothing, a Mac change skips the `ios` jobs, an iOS change
-runs only the check suites that compile iOS files, and `check` runs only the
-suites that name a changed file (all of them when it names none).
-`./Tools/check.sh <suite>...` runs named suites locally, and a manual run of the
-CI workflow runs everything.
+it touches (`python3 Tools/ci-scope.py --files <path>...` shows its choice).
+Documentation needs nothing. A Mac change skips the `ios` jobs, and the
+release build too when only check suites changed. An iOS change runs only the
+check suites that compile iOS files, and a test change only the `ios` part that
+runs it. `check` runs only the suites whose scripts name a changed file (all of
+them when no suite names it). `./Tools/check.sh <suite>...` runs named suites
+locally, and a manual run of the CI workflow runs everything.
 
 The iPhone companion compiles the same Model, Store and service sources as
 the Mac, listed in `Tools/iOS/shared-sources.txt`; its own replacements for
