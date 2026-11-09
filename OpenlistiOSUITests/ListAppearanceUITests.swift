@@ -20,17 +20,18 @@ final class ListAppearanceUITests: XCTestCase {
         XCTAssertTrue(field.waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["appearance.icon.🗻"].isSelected)
         snapshot(app, "list-appearance-sheet")
-        let keyboard = app.keyboards.firstMatch
-        focus(field, keyboard: keyboard)
+        focus(field, in: app)
         field.typeText("🦊")
         let fox = app.staticTexts["🦊"]
         XCTAssertTrue(fox.waitForExistence(timeout: 5), "An emoji of the list's own shows beside the field")
         XCTAssertFalse(app.buttons["appearance.icon.🗻"].isSelected)
         XCTAssertEqual(field.value as? String, "Any emoji", "The field empties for the next")
-        XCTAssertTrue(waitForAbsence(of: keyboard), "The pick puts the keyboard away")
+        // Gone from the screen: a minimized keyboard can stay in the
+        // accessibility tree for a while after typing (KeyboardTyping.swift).
+        XCTAssertTrue(app.waitForKeyboardToGo(timeout: 5), "The pick puts the keyboard away")
         snapshot(app, "list-appearance-own-emoji")
-        focus(field, keyboard: keyboard)
-        field.typeText("abc")
+        focus(field, in: app)
+        app.type("abc", into: field)
         XCTAssertEqual(field.value as? String, "Any emoji", "Letters are no icon")
         XCTAssertTrue(fox.exists)
 
@@ -63,12 +64,12 @@ final class ListAppearanceUITests: XCTestCase {
     /// Taps `field` until the keyboard is up: a loaded simulator can drop the
     /// first tap while it brings up its first keyboard.
     @MainActor
-    private func focus(_ field: XCUIElement, keyboard: XCUIElement) {
-        for _ in 0..<2 where !keyboard.exists {
+    private func focus(_ field: XCUIElement, in app: XCUIApplication) {
+        for _ in 0..<2 where !app.keyboardIsOnScreen {
             field.tap()
-            _ = keyboard.waitForExistence(timeout: 10)
+            _ = app.waitForKeyboardToShow()
         }
-        XCTAssertTrue(keyboard.exists)
+        XCTAssertTrue(app.keyboardIsOnScreen)
     }
 
     /// Scrolls the sheet, which puts any keyboard away, until `element` is
@@ -77,11 +78,11 @@ final class ListAppearanceUITests: XCTestCase {
     @MainActor
     private func reveal(_ element: XCUIElement, in app: XCUIApplication) {
         let scroll = app.scrollViews["appearance.scroll"]
-        for _ in 0..<4 where !(element.exists && element.isHittable && !app.keyboards.firstMatch.exists) {
+        for _ in 0..<4 where !(element.exists && element.isHittable && !app.keyboardIsOnScreen) {
             let start = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.15))
             start.press(forDuration: 0.05, thenDragTo: start.withOffset(CGVector(dx: 0, dy: -160)))
         }
-        XCTAssertFalse(app.keyboards.firstMatch.exists)
+        XCTAssertFalse(app.keyboardIsOnScreen)
         XCTAssertTrue(element.isHittable)
     }
 

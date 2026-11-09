@@ -25,9 +25,9 @@ final class InteractionUITests: XCTestCase {
         XCTAssertFalse(create.isEnabled, "Create waits for a name")
         let name = app.alerts.textFields.firstMatch
         name.tap()
-        name.typeText("   ")
+        app.type("   ", into: name)
         XCTAssertFalse(create.isEnabled, "Spaces aren't a name")
-        name.typeText("Garden")
+        app.type("Garden", into: name)
         XCTAssertTrue(create.isEnabled)
         create.tap()
         app.waitForScreen("screen.list")

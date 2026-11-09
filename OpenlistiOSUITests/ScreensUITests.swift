@@ -136,11 +136,11 @@ final class ScreensUITests: XCTestCase {
         app.waitForScreen("screen.capture")
         let field = app.textFields["capture.field"]
         XCTAssertTrue(field.waitForExistence(timeout: 5))
-        field.typeText("Buy yen for the trip fri 6pm ~15m #travel")
+        app.type("Buy yen for the trip fri 6pm ~15m #travel", into: field)
         XCTAssertTrue(app.element(beginningWith: "Saves as Fri 25, 18:00, 15 min, #travel").waitForExistence(timeout: 5))
         snap(app, "capture")
         // Return adds and clears the field for the next task; Done closes.
-        field.typeText("\n")
+        app.type("\n", into: field)
         let added = app.screen("capture.added")
         XCTAssertTrue(added.waitForExistence(timeout: 5))
         XCTAssertTrue(added.label.contains("Added “Buy yen for the trip” to Inbox"))
@@ -165,7 +165,7 @@ final class ScreensUITests: XCTestCase {
         let due = app.buttons["capture.dueDate"]
         XCTAssertTrue(due.waitForExistence(timeout: 5))
         XCTAssertEqual(due.value as? String, "None")
-        app.textFields["capture.field"].typeText("Book a haircut")
+        app.type("Book a haircut", into: app.textFields["capture.field"])
         due.tap()
         for day in ["Today", "Tomorrow", "This weekend", "Next week"] {
             XCTAssertTrue(app.buttons[day].waitForExistence(timeout: 5))
@@ -204,7 +204,7 @@ final class ScreensUITests: XCTestCase {
         app.dock("capture").tap()
         app.waitForScreen("screen.capture")
         let field = app.textFields["capture.field"]
-        field.typeText("Book studio fri 6pm ~30m #travel")
+        app.type("Book studio fri 6pm ~30m #travel", into: field)
         let due = app.buttons["capture.dueDate"]
         XCTAssertEqual(due.value as? String, "Fri 25, 18:00")
         due.tap()
@@ -222,7 +222,7 @@ final class ScreensUITests: XCTestCase {
         XCTAssertEqual(due.value as? String, "Tomorrow, 18:00")
         XCTAssertEqual(field.value as? String, "Book studio fri 6pm ~30m #travel")
         field.tap()
-        field.typeText("\n")
+        app.type("\n", into: field)
         XCTAssertTrue(app.screen("capture.added").waitForExistence(timeout: 5), "Return adds and keeps Capture for the next")
         app.screen("screen.capture").buttons["Done"].tap()
         app.waitForScreenToClose("screen.capture")
@@ -244,7 +244,7 @@ final class ScreensUITests: XCTestCase {
         let sheet = app.waitForScreen("screen.capture")
         let field = app.textFields["capture.field"]
         XCTAssertTrue(field.waitForExistence(timeout: 5))
-        field.typeText("Water the balcony plants")
+        app.type("Water the balcony plants", into: field)
         let top = sheet.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.02))
         top.press(forDuration: 0.05, thenDragTo: top.withOffset(CGVector(dx: 0, dy: 480)))
         XCTAssertFalse(sheet.waitForNonExistence(timeout: 2), "A swipe down must not discard a typed draft")
@@ -263,7 +263,7 @@ final class ScreensUITests: XCTestCase {
         app.waitForScreen("screen.capture")
         let due = app.buttons["capture.dueDate"]
         let field = app.textFields["capture.field"]
-        field.typeText("Order paint tomorrow #home")
+        app.type("Order paint tomorrow #home", into: field)
         XCTAssertEqual(due.value as? String, "Tomorrow")
         due.tap()
         app.buttons["Clear date"].tap()
@@ -517,7 +517,7 @@ final class ScreensUITests: XCTestCase {
         app.buttons["lists.new"].tap()
         let name = app.alerts.textFields.firstMatch
         XCTAssertTrue(name.waitForExistence(timeout: 5))
-        name.typeText("Garden")
+        app.type("Garden", into: name)
         app.alerts.buttons["Create"].tap()
         app.waitForScreen("screen.list")
         XCTAssertTrue(app.staticTexts["Nothing here yet"].waitForExistence(timeout: 5))
@@ -560,9 +560,9 @@ final class ScreensUITests: XCTestCase {
         app.buttons["detail.addSubtaskStart"].tap()
         let field = app.textFields["detail.addSubtask"]
         XCTAssertTrue(field.waitForExistence(timeout: 5))
-        field.typeText("Collect interview notes\n")
+        app.type("Collect interview notes\n", into: field)
         XCTAssertTrue(app.buttons["Collect interview notes"].waitForExistence(timeout: 5))
-        field.typeText("Send to the hiring panel\n")
+        app.type("Send to the hiring panel\n", into: field)
         XCTAssertTrue(app.buttons["Send to the hiring panel"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.staticTexts["detail.subtaskCount"].label, "0 of 2")
         snap(app, "detail-subtasks")
