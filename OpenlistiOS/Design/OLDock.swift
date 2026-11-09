@@ -311,12 +311,14 @@ struct OLTrayView: View {
         .accessibilityIdentifier("tray")
         .onAppear {
             if announces { AccessibilityNotification.Announcement(message.text).post() }
+            guard !message.stays else { return }
             let left = max(0, message.seconds - Date.now.timeIntervalSince(message.shownAt))
             withAnimation(.linear(duration: left)) { drained = true }
         }
     }
 
     private var remaining: CGFloat {
+        guard !message.stays else { return 1 }
         guard !drained else { return 0 }
         let elapsed = Date.now.timeIntervalSince(message.shownAt)
         return CGFloat(max(0, 1 - elapsed / max(0.1, message.seconds)))

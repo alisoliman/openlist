@@ -4,11 +4,11 @@ cd "$(dirname "$0")/.."
 OUT=$(mktemp -d)
 FIXTURE_ID=$(uuidgen)
 trap 'rm -rf "$OUT"' EXIT
-xcrun swiftc -swift-version 6 -default-isolation MainActor -parse-as-library \
+xcrun swiftc -wmo -swift-version 6 -default-isolation MainActor -parse-as-library \
   -o "$OUT/legacy-fixture" Tools/SyncChecks/LegacyModels.swift \
   openlist/Model/Recurrence.swift openlist/Model/ListCover.swift openlist/Services/MediaStore.swift \
   Tools/SyncChecks/ReviewSession.swift Tools/SyncChecks/LegacyFixture.swift
-xcrun swiftc -swift-version 6 -default-isolation MainActor -parse-as-library \
+xcrun swiftc -wmo -swift-version 6 -default-isolation MainActor -parse-as-library \
   -o "$OUT/sync-checks" openlist/Model/*.swift Shared/ListAccent.swift Shared/ListIcon.swift Shared/WidgetSnapshot.swift Shared/WidgetKind.swift \
   Tools/SyncChecks/ReviewSession.swift openlist/Next/NextEditorTypography.swift \
   openlist/Services/Store.swift openlist/Services/Store+Trash.swift openlist/Services/Store+Activity.swift openlist/Services/Store+Blocks.swift openlist/Services/Store+Copies.swift \

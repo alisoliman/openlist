@@ -8,11 +8,14 @@ permissions:
   contents: read
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # A newer push to a pull request replaces its run. Each merge to main
+  # gets a finished run instead: the next one waits for it.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   check:
     runs-on: xcode-27
-    timeout-minutes: 45
+    # 19 to 28 minutes: the regression checks, then the release build.
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -27,6 +30,12 @@ jobs:
           [[ $(xcodebuild -version | head -n 1) == "Xcode 27."* ]]
           swift --version
           uname -m
+          echo "$(sysctl -n hw.ncpu) cores, $(( $(sysctl -n hw.memsize) / 1073741824 )) GB"
+      - name: Swift packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/Library/Caches/org.swift.swiftpm
+          key: swiftpm-${{ hashFiles('Package.resolved', 'openlist.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
       - name: Regression checks
         run: ./Tools/check.sh
       - name: Build and verify Apple Silicon app and widget
@@ -38,9 +47,18 @@ jobs:
           name: build-log
           path: build/release/build.log
   ios:
+    # The unit and UI tests in three parts, each on its own runner and
+    # simulator, about a third of the UI suite's time each.
+    name: ios (${{ matrix.part }}/3)
     runs-on: xcode-27
-    # The UI suite alone now runs past 40 minutes on the hosted runners.
-    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [1, 2, 3]
+    # 23 to 38 minutes: the build, the simulator's boot, then a part of the
+    # tests. Room for a slow runner and a test's second run, while a hung
+    # test still ends well before the old single job's 75.
+    timeout-minutes: 55
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -54,16 +72,33 @@ jobs:
           xcodebuild -version
           [[ $(xcodebuild -version | head -n 1) == "Xcode 27."* ]]
           xcrun simctl list runtimes
+          echo "$(sysctl -n hw.ncpu) cores, $(( $(sysctl -n hw.memsize) / 1073741824 )) GB"
+          ls /Library/Developer/CoreSimulator/Caches/dyld 2>/dev/null || echo "No simulator dyld caches yet"
       - name: iOS 27 simulator runtime
         run: xcrun simctl list runtimes | grep -q 'iOS-27-0' || xcodebuild -downloadPlatform iOS
+      - name: Swift packages
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/Library/Caches/org.swift.swiftpm
+          key: swiftpm-${{ hashFiles('Package.resolved', 'openlist.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
       - name: iOS build, unit and UI tests
         run: ./Tools/run-ios-checks.sh
+        env:
+          OPENLIST_IOS_PART: ${{ matrix.part }}/3
+      # The logs apart from the result bundle, which a job stopped mid-test
+      # leaves half written and unreadable to the upload.
       - name: iOS logs
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: ios-logs
+          name: ios-logs-${{ matrix.part }}
           path: |
+            build/ios/boot.log
             build/ios/build.log
             build/ios/test.log
-            build/ios/Tests.xcresult
+      - name: iOS test results
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ios-results-${{ matrix.part }}
+          path: build/ios/Tests.xcresult

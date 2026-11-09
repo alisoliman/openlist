@@ -85,8 +85,8 @@ final class TaskSwipeUITests: XCTestCase {
         let home = app.buttons.matching(NSPredicate(format: "label == 'Home' OR label == '🏡 Home'")).firstMatch
         XCTAssertTrue(home.waitForExistence(timeout: 5))
         home.tap()
-        XCTAssertTrue(app.screen("tray").waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons[title].exists, "Moving the capture files it out of Inbox")
+        XCTAssertTrue(app.buttons["tray.action"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons[title].waitForNonExistence(timeout: 5), "Moving the capture files it out of Inbox")
         snapshot(app, "swipe-moved-from-inbox")
         app.buttons["tray.action"].tap()
         XCTAssertTrue(app.buttons[title].waitForExistence(timeout: 5), "Undo restores the original Inbox membership")
@@ -121,7 +121,7 @@ final class TaskSwipeUITests: XCTestCase {
         XCTAssertEqual(task.buttons["task.swipe.first"].label, "Tomorrow")
         XCTAssertEqual(task.buttons["task.swipe.second"].label, "Complete")
         task.buttons["task.swipe.first"].tap()
-        XCTAssertTrue(app.screen("tray").waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["tray.action"].waitForExistence(timeout: 5))
         // On the title: XCUITest's own tap point for a row whose date arrived
         // in place falls on the edge of the date's target.
         app.buttons[title].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)).tap()
@@ -147,14 +147,14 @@ final class TaskSwipeUITests: XCTestCase {
         XCTAssertTrue(delete.waitForExistence(timeout: 5))
         snapshot(app, "swipe-left-delete")
         delete.tap()
-        XCTAssertTrue(app.screen("tray").waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons[title].exists)
+        XCTAssertTrue(app.buttons["tray.action"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons[title].waitForNonExistence(timeout: 5))
         app.buttons["tray.action"].tap()
         XCTAssertTrue(app.buttons[title].waitForExistence(timeout: 5))
 
         drag(task, from: 0.88, to: 0.06)
-        XCTAssertTrue(app.screen("tray").waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons[title].exists)
+        XCTAssertTrue(app.buttons["tray.action"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons[title].waitForNonExistence(timeout: 5))
         app.terminate()
         app.launchEnvironment["OpenlistOpenRoute"] = "trash"
         app.launch()

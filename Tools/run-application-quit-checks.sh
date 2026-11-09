@@ -3,7 +3,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 OUT=$(mktemp -d)
 trap 'rm -rf "$OUT"' EXIT
-xcrun swiftc -swift-version 6 -default-isolation MainActor -o "$OUT/application-quit-checks" \
+xcrun swiftc -wmo -swift-version 6 -default-isolation MainActor -o "$OUT/application-quit-checks" \
   openlist/Services/ApplicationQuit.swift Tools/ApplicationQuitChecks/main.swift
 python3 - "$OUT/application-quit-checks" <<'PY'
 import subprocess

@@ -104,6 +104,19 @@ final class WidgetSnapshotPublisher {
     private var activityCache: ActivityCache?
     /// Each sorted list's task order, and the key it was worked out for.
     private var sortedOrders: [UUID: SortedOrder] = [:]
+    /// What the rebuilds so far have read, which the caches above keep down.
+    /// The check suites count these rather than time them, as a busy machine
+    /// slows every read alike.
+    private(set) var reads = Reads()
+
+    struct Reads: Equatable {
+        /// Blocks fetched: tasks, the blocks above them, sorted lists' documents.
+        var blocks = 0
+        /// Sorted lists' whole documents, prose and all.
+        var documents = 0
+        /// Times the completion history was read for the Activity section.
+        var histories = 0
+    }
 
     /// A sorted list's tasks in its page's order. That order runs through the
     /// prose between the list's runs of tasks, so working it out reads the
@@ -405,6 +418,7 @@ final class WidgetSnapshotPublisher {
         // A model deleted since the last save still turns up in a fetch.
         let tasks = ((try? store.context.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.trashID == nil && $0.kindRaw == "task" }))) ?? [])
             .filter { !$0.isDeleted }
+        reads.blocks += tasks.count
         var blocks = tasks
         var fetched = Set(tasks.map(\.id))
         var missing = Set(tasks.compactMap(\.parentID)).subtracting(fetched)
@@ -413,6 +427,7 @@ final class WidgetSnapshotPublisher {
             let ids = Array(missing)
             let parents = ((try? store.context.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.trashID == nil && ids.contains($0.id) }))) ?? [])
                 .filter { !$0.isDeleted }
+            reads.blocks += parents.count
             blocks += parents
             missing = Set(parents.compactMap(\.parentID)).subtracting(fetched)
         }
@@ -466,6 +481,8 @@ final class WidgetSnapshotPublisher {
         let document = ((try? store.context.fetch(FetchDescriptor<Block>(predicate: #Predicate {
             $0.trashID == nil && $0.listID == listID
         }))) ?? []).filter { !$0.isDeleted && !$0.isTrashed && seen.insert($0.id).inserted }
+        reads.documents += 1
+        reads.blocks += document.count
         let tasks = Self.outlineTasks(document, sorting: list.sorting)
         orders[list.id] = SortedOrder(key: key, ids: tasks.map(\.id))
         return tasks
@@ -538,6 +555,7 @@ final class WidgetSnapshotPublisher {
            cache.staleAt.map({ now < $0 }) ?? true {
             return cache.activity
         }
+        reads.histories += 1
         guard let heatmap = try? store.activityHeatmap(now: now, calendar: calendar, weeks: Limit.activityWeeks) else {
             activityCache = nil
             return WidgetSnapshot.Activity()

@@ -519,8 +519,10 @@ class PackagingChecks(unittest.TestCase):
             command.insert(0, shell)
         if extra_env:
             env.update(extra_env)
+        # A guard against a hang, not a time budget: codesign and the
+        # helper's own runs take far longer on a busy machine.
         return subprocess.run(
-            command, capture_output=True, timeout=8, env=env,
+            command, capture_output=True, timeout=60, env=env,
         )
 
     def test_valid_embedded_layout_and_offline_help(self):

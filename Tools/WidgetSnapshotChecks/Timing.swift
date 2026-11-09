@@ -5,6 +5,8 @@ import SwiftData
 /// documents with 5,000 tasks among 20,000 prose blocks, and 10,000 retained
 /// completions. Saves, work state changes and settings changes all rebuild on
 /// the main actor, so these numbers are what a typing pause or a Start costs.
+/// The times are printed for a person to read; the checks count what each
+/// rebuild reads instead, which a busy machine doesn't change.
 @MainActor
 func runTimingChecks(directory: URL, now: Date) throws {
     let schema = Schema([TaskList.self, Block.self, SidebarSection.self, TaskLabel.self, Attachment.self, ActivityEvent.self,
@@ -72,30 +74,47 @@ func runTimingChecks(directory: URL, now: Date) throws {
         let elapsed = ContinuousClock.now - start
         return Double(elapsed.components.seconds) * 1_000 + Double(elapsed.components.attoseconds) / 1e15
     }
+    /// What `body`'s rebuilds read, each.
+    func reads(of runs: Int = 1, _ body: () -> Void) -> WidgetSnapshotPublisher.Reads {
+        let before = publisher.reads
+        for _ in 0..<runs { body() }
+        let after = publisher.reads
+        return .init(blocks: (after.blocks - before.blocks) / runs, documents: (after.documents - before.documents) / runs,
+                     histories: (after.histories - before.histories) / runs)
+    }
+    let everyBlockCount = try store.context.fetchCount(FetchDescriptor<Block>(predicate: #Predicate { $0.trashID == nil }))
     var snapshot = WidgetSnapshot()
-    let first = time { snapshot = publisher.buildSnapshot(now: now) }
+    var first = 0.0
+    let firstReads = reads { first = time { snapshot = publisher.buildSnapshot(now: now) } }
     check(snapshot.totalOpenCount == 5_000 - 400 && snapshot.lists.count == 51, "the timing library is all in the snapshot")
     check(snapshot.lists[1].openItems.first?.title == "Task 0.0.0", "a list's rows still follow its outline")
+    check(firstReads.histories == 1 && firstReads.documents == 0, "the first rebuild reads the history once, and no document")
     let runs = 5
-    let unchanged = (0..<runs).map { _ in time { _ = publisher.buildSnapshot(now: now) } }.reduce(0, +) / Double(runs)
+    var unchanged = 0.0
+    let unchangedReads = reads(of: runs) { unchanged += time { _ = publisher.buildSnapshot(now: now) } / Double(runs) }
+    // What the rebuild used to read every time: every block, and the history.
+    check(unchangedReads.histories == 0 && unchangedReads.blocks == firstReads.blocks && unchangedReads.blocks < everyBlockCount,
+          "a rebuild that leaves the history alone reads its tasks and what they sit under, not every block or the history")
     // A sorted list's order reads its whole document, prose and all, but
     // only when the order may have changed: not on a rebuild that leaves it.
     for list in lists.prefix(25) { store.setSorting(.dueDate, for: list) }
-    let firstSorted = time { _ = publisher.buildSnapshot(now: now) }
-    let sortedUnchanged = (0..<runs).map { _ in time { _ = publisher.buildSnapshot(now: now) } }.reduce(0, +) / Double(runs)
+    var firstSorted = 0.0
+    let firstSortedReads = reads { firstSorted = time { _ = publisher.buildSnapshot(now: now) } }
+    check(firstSortedReads.documents == 25 && firstSortedReads.histories == 0, "a list newly sorted reads its document once")
+    var sortedUnchanged = 0.0
+    let sortedUnchangedReads = reads(of: runs) { sortedUnchanged += time { _ = publisher.buildSnapshot(now: now) } / Double(runs) }
+    check(sortedUnchangedReads == unchangedReads, "a rebuild that leaves sorted lists alone does not read their documents again")
     store.toggleCompletion(tasks[0], now: now)
-    let completed = time { snapshot = publisher.buildSnapshot(now: now) }
+    var completed = 0.0
+    let completedReads = reads { completed = time { snapshot = publisher.buildSnapshot(now: now) } }
+    check(completedReads.histories == 1, "a completion reads the history again")
     check(snapshot.activity.today == WidgetSnapshotPublisher(store: store).buildSnapshot(now: now).activity.today,
           "a completion rebuilds the kept Activity section")
 
-    // What the rebuild used to read every time: every block, and the history.
     let everyBlock = time { _ = try? store.context.fetch(FetchDescriptor<Block>(predicate: #Predicate { $0.trashID == nil })) }
     let history = time { _ = try? store.activityHeatmap(now: now, calendar: calendar, weeks: 21) }
     print(String(format: "⏱  snapshot rebuild, 5k tasks, 20k prose blocks, 10k completions: first %.0f ms, "
                  + "then %.0f ms while the history is unchanged, %.0f ms after a completion "
                  + "(reading every block takes %.0f ms, the history %.0f ms); with half the lists sorted, "
                  + "%.0f ms once, then %.0f ms", first, unchanged, completed, everyBlock, history, firstSorted, sortedUnchanged))
-    check(unchanged < everyBlock + history, "a rebuild that leaves the history alone costs less than reading every block and the history once")
-    check(sortedUnchanged < unchanged + everyBlock / 4,
-          "a rebuild that leaves sorted lists alone does not read their documents again")
 }
