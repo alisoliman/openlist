@@ -197,6 +197,7 @@ struct NextInspector: View {
     @Environment(AppEnvironment.self) private var env
     @Environment(\.nextStyle) private var style
     @Environment(\.nextLibrary) private var library
+    @Environment(\.openURL) private var openURL
     static let width: CGFloat = 360
     /// The widest the page's note runs, so its lines stay comfortable to
     /// read; everything else on the page runs to the column's edge, as a
@@ -223,6 +224,8 @@ struct NextInspector: View {
     @State private var showsActivity = false
     /// The page rises in as a screen does.
     @State private var appeared = false
+    /// The note's `/` menu, while it's open.
+    @State private var noteSlash: NXNoteSlash?
 
     typealias Field = NXInspectorText.Role
 
@@ -301,7 +304,9 @@ struct NextInspector: View {
             load()
             adoptRequestedPicker()
             let env = env
-            clicks.install { env.workbench.captureOpen || env.navigator.isSearchOpen || env.navigator.isCommandPaletteOpen }
+            // The note's `/` menu takes its own clicks, as the cards do.
+            clicks.install { env.workbench.captureOpen || env.navigator.isSearchOpen || env.navigator.isCommandPaletteOpen
+                || noteSlash != nil }
             if isPage { withAnimation(style.ease(260)) { appeared = true } }
             takeNoteRequest()
         }
@@ -373,12 +378,11 @@ struct NextInspector: View {
             }
             Rectangle().fill(NX.ink(0.07)).frame(height: 0.5)
                 .padding(.top, isPage ? 20 : 16)
-            VStack(alignment: .leading, spacing: 8) {
-                noteBox
-                    .id(ContentReveal.Anchor.taskNote(task.id))
-                TaskNoteLinks(note: task.note)
-            }
-            .padding(.top, isPage ? 16 : 12)
+            noteBox
+                .id(ContentReveal.Anchor.taskNote(task.id))
+                .padding(.top, isPage ? 16 : 12)
+                // Its `/` menu draws over the sections under it.
+                .zIndex(1)
             VStack(alignment: .leading, spacing: 28) {
                 // As the design: not two levels down.
                 if ancestors.count < OutlinePolicy.maximumDepth {
@@ -787,7 +791,17 @@ struct NextInspector: View {
         NXInspectorText(role: .note, text: $note.value, large: isPage, caretColor: env.settings.accent.editorColor,
                         fields: fields,
                         onFocus: { focused(.note, $0) },
-                        onSwitch: { fields.write(.title) })
+                        onSwitch: { fields.write(.title) },
+                        openLink: { openURL($0) },
+                        // A box ticked at rest is saved at once, one step of its own.
+                        onCommit: { commitNote() },
+                        onSlash: { noteSlash = $0 })
+            .overlay(alignment: .topLeading) {
+                if let noteSlash {
+                    NXNoteSlashCard(slash: noteSlash, apply: { fields.applySlash($0) }, dismiss: { fields.closeSlash() })
+                        .offset(x: noteSlash.line.minX - 6, y: noteSlash.line.maxY + 6)
+                }
+            }
             .frame(maxWidth: isPage ? Self.noteMeasure : .infinity, minHeight: isPage ? 140 : 84, alignment: .topLeading)
             .frame(maxWidth: .infinity, alignment: .leading)
             // A click anywhere in that room is in the note, as in a textarea.

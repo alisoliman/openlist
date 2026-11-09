@@ -39,6 +39,12 @@ nonisolated enum NoteMarkdown {
     struct Span: Equatable {
         let range: NSRange
         let kind: Kind
+        /// The whole inline construct the span belongs to, its markers too:
+        /// what a caret inside it shows the syntax of while the note is
+        /// written. Nil for a line's own syntax, which stays hidden.
+        var group: NSRange? = nil
+        /// Where a link or a bare address goes, as written.
+        var address: String? = nil
     }
 
     static func spans(in text: String) -> [Span] {
@@ -116,7 +122,7 @@ nonisolated enum NoteMarkdown {
 
     private static let code = regex(#"`([^`\n]+)`"#)
     private static let link = regex(#"\[([^\]\n]+)\]\(([^()\s]+)\)"#)
-    private static let bareURL = regex(#"https?://[^\s<>()\[\]]+[^\s<>()\[\].,;:!?'"]"#)
+    private static let bareURL = regex(#"(?:https?|openlist(?:-dev)?)://[^\s<>()\[\]]+[^\s<>()\[\].,;:!?'"]"#)
     private static let bold = regex(#"(\*\*|__)(?=\S)(.+?)(?<=\S)\1"#)
     private static let italic = regex(#"(?<![*\w])\*(?=[^\s*])([^*\n]+?)(?<=[^\s*])\*(?![*\w])|(?<![_\w])_(?=[^\s_])([^_\n]+?)(?<=[^\s_])_(?![_\w])"#)
     private static let strike = regex(#"~~(?=\S)(.+?)(?<=\S)~~"#)
@@ -135,14 +141,16 @@ nonisolated enum NoteMarkdown {
         }
         for match in link.matches(in: text, range: range) where free(match.range) {
             taken.append(match.range)
-            let label = match.range(at: 1)
-            spans.append(Span(range: NSRange(location: match.range.location, length: 1), kind: .marker))
-            spans.append(Span(range: label, kind: .link))
-            spans.append(Span(range: NSRange(location: NSMaxRange(label), length: NSMaxRange(match.range) - NSMaxRange(label)), kind: .marker))
+            let whole = match.range, label = match.range(at: 1)
+            let address = source.substring(with: match.range(at: 2))
+            spans.append(Span(range: NSRange(location: whole.location, length: 1), kind: .marker, group: whole))
+            spans.append(Span(range: label, kind: .link, group: whole, address: address))
+            spans.append(Span(range: NSRange(location: NSMaxRange(label), length: NSMaxRange(whole) - NSMaxRange(label)), kind: .marker,
+                              group: whole))
         }
         for match in bareURL.matches(in: text, range: range) where free(match.range) {
             taken.append(match.range)
-            spans.append(Span(range: match.range, kind: .url))
+            spans.append(Span(range: match.range, kind: .url, group: match.range, address: source.substring(with: match.range)))
         }
         for match in bold.matches(in: text, range: range) where free(match.range) {
             wrap(match.range, inner: match.range(at: 2), kind: .bold, into: &spans)
@@ -158,9 +166,10 @@ nonisolated enum NoteMarkdown {
 
     /// `kind` over `inner`, and what surrounds it in `whole` as markers.
     private static func wrap(_ whole: NSRange, inner: NSRange, kind: Kind, into spans: inout [Span]) {
-        spans.append(Span(range: NSRange(location: whole.location, length: inner.location - whole.location), kind: .marker))
-        spans.append(Span(range: inner, kind: kind))
-        spans.append(Span(range: NSRange(location: NSMaxRange(inner), length: NSMaxRange(whole) - NSMaxRange(inner)), kind: .marker))
+        spans.append(Span(range: NSRange(location: whole.location, length: inner.location - whole.location), kind: .marker, group: whole))
+        spans.append(Span(range: inner, kind: kind, group: whole))
+        spans.append(Span(range: NSRange(location: NSMaxRange(inner), length: NSMaxRange(whole) - NSMaxRange(inner)), kind: .marker,
+                          group: whole))
     }
 
     // MARK: Lists
@@ -196,7 +205,7 @@ nonisolated enum NoteMarkdown {
 
     // MARK: Links
 
-    private static let soleBareURL = regex(#"^https?://\S+$"#)
+    private static let soleBareURL = regex(#"^(?:https?|openlist(?:-dev)?)://\S+$"#)
     private static let soleMarkdownLink = regex(#"^\[[^\]\n]+\]\(([^()\s]+)\)$"#)
 
     /// The link a note is made of when it holds nothing else: one bare
@@ -223,6 +232,7 @@ nonisolated enum NoteMarkdown {
     /// Where an address goes, short enough to name it: its host without
     /// `www.`, and the first step of its path, as `google.com/maps`.
     static func shortAddress(_ url: URL) -> String {
+        if url.scheme?.lowercased().hasPrefix("openlist") == true { return "Openlist" }
         guard let host = url.host, !host.isEmpty else { return url.absoluteString }
         let name = host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
         guard let first = url.pathComponents.first(where: { $0 != "/" && !$0.isEmpty }) else { return name }
@@ -265,6 +275,260 @@ nonisolated enum NoteMarkdown {
         var kept: [String] = []
         for line in lines where !(line.isEmpty && (kept.last?.isEmpty ?? true)) { kept.append(line) }
         return kept.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    // MARK: Lines
+
+    /// One line of a note, read for how it's drawn: what kind of block it
+    /// is, and the syntax at its start the note leaves out of sight.
+    struct Line: Equatable {
+        enum Kind: Equatable {
+            case text
+            case heading(Int)
+            case bullet
+            case numbered
+            case task(done: Bool)
+            case quote
+            /// An opening or closing ``` line.
+            case fence
+            /// A line inside a fenced block.
+            case code
+            /// `---` and its kin.
+            case rule
+            /// A line that's one link and nothing else, drawn as a bookmark:
+            /// where it goes, and the words it was given, if any.
+            case bookmark(URL, title: String?)
+        }
+
+        /// The line, without its break.
+        let range: NSRange
+        let kind: Kind
+        /// The syntax that opens the line, its indent too: hashes, a quote's
+        /// mark, a list's bullet or box. Empty where there's none.
+        let prefix: NSRange
+        /// How far a list item is nested: its indent in steps of two spaces
+        /// or a tab.
+        var depth = 0
+
+        /// Lines whose opening syntax is never shown: the caret stays after it.
+        var hidesPrefix: Bool {
+            switch kind {
+            case .heading, .bullet, .task, .quote: true
+            default: false
+            }
+        }
+    }
+
+    static func lines(in text: String) -> [Line] {
+        let source = text as NSString
+        var lines: [Line] = []
+        var fenced = false
+        source.enumerateSubstrings(in: NSRange(location: 0, length: source.length), options: [.byLines, .substringNotRequired]) { _, range, _, _ in
+            let content = source.substring(with: range)
+            let whole = NSRange(location: 0, length: range.length)
+            let empty = NSRange(location: range.location, length: 0)
+            func shifted(_ prefix: NSRange) -> NSRange { NSRange(location: range.location + prefix.location, length: prefix.length) }
+            if content.trimmingCharacters(in: .whitespaces).hasPrefix("```") {
+                fenced.toggle()
+                lines.append(Line(range: range, kind: .fence, prefix: empty))
+                return
+            }
+            if fenced {
+                lines.append(Line(range: range, kind: .code, prefix: empty))
+                return
+            }
+            if rule.firstMatch(in: content, range: whole) != nil {
+                lines.append(Line(range: range, kind: .rule, prefix: empty))
+            } else if let match = heading.firstMatch(in: content, range: whole) {
+                lines.append(Line(range: range, kind: .heading(match.range(at: 1).length), prefix: shifted(match.range)))
+            } else if let match = quote.firstMatch(in: content, range: whole) {
+                lines.append(Line(range: range, kind: .quote, prefix: shifted(match.range)))
+            } else if let match = task.firstMatch(in: content, range: whole) {
+                let done = (content as NSString).substring(with: match.range(at: 3)) != " "
+                lines.append(Line(range: range, kind: .task(done: done), prefix: shifted(match.range),
+                                  depth: depth((content as NSString).substring(with: match.range(at: 1)))))
+            } else if let match = list.firstMatch(in: content, range: whole) {
+                let bullet = (content as NSString).substring(with: match.range(at: 2))
+                lines.append(Line(range: range, kind: "-*+".contains(bullet) ? .bullet : .numbered, prefix: shifted(match.range),
+                                  depth: depth((content as NSString).substring(with: match.range(at: 1)))))
+            } else if let bookmark = bookmark(in: content) {
+                lines.append(Line(range: range, kind: bookmark, prefix: empty))
+            } else {
+                lines.append(Line(range: range, kind: .text, prefix: empty))
+            }
+        }
+        return lines
+    }
+
+    /// Two spaces, or a tab, nest a list item one step.
+    private static func depth(_ indent: String) -> Int {
+        indent.reduce(0) { $0 + ($1 == "\t" ? 2 : 1) } / 2
+    }
+
+    /// A line that's one bare address, or one `[words](address)`, alone.
+    private static func bookmark(in line: String) -> Line.Kind? {
+        let text = line.trimmingCharacters(in: .whitespaces)
+        guard !text.isEmpty, text.count == line.count else { return nil }
+        let whole = NSRange(location: 0, length: (text as NSString).length)
+        if soleBareURL.firstMatch(in: text, range: whole) != nil {
+            return openable(text).map { .bookmark($0, title: nil) }
+        }
+        guard let match = soleMarkdownLink.firstMatch(in: text, range: whole),
+              let url = openable((text as NSString).substring(with: match.range(at: 1))) else { return nil }
+        let words = (text as NSString).substring(with: NSRange(location: 1, length: match.range(at: 1).location - 3))
+        return .bookmark(url, title: words)
+    }
+
+    /// The words a bookmark goes by when it was given none, read from its
+    /// address alone, as nothing is fetched: a Maps place's name, else its
+    /// last step put back into words, else its site.
+    static func linkTitle(for url: URL) -> String {
+        let steps = url.pathComponents.filter { $0 != "/" && !$0.isEmpty }
+        // An item in this library, whose name isn't in its address.
+        if url.scheme?.lowercased().hasPrefix("openlist") == true {
+            return steps.contains("list") ? "A list in Openlist" : "A task in Openlist"
+        }
+        let site = shortAddress(url).components(separatedBy: "/").first ?? shortAddress(url)
+        if url.host?.contains("google.") == true, let place = steps.firstIndex(of: "place"), place + 1 < steps.count {
+            let name = words(steps[place + 1])
+            if !name.isEmpty { return name }
+        }
+        for step in steps.reversed() {
+            let stem = (step as NSString).deletingPathExtension
+            guard stem.lowercased() != "index", stem.contains(where: \.isLetter), !stem.hasPrefix("@") else { continue }
+            let name = words(stem)
+            guard !name.isEmpty else { continue }
+            return name.prefix(1).uppercased() + name.dropFirst()
+        }
+        return site
+    }
+
+    /// A path step as words: `+`, `-` and `_` as spaces, escapes undone.
+    private static func words(_ step: String) -> String {
+        let spaced = step.replacingOccurrences(of: "+", with: " ")
+        let decoded = spaced.removingPercentEncoding ?? spaced
+        return decoded.replacingOccurrences(of: "-", with: " ").replacingOccurrences(of: "_", with: " ")
+            .split(separator: " ").joined(separator: " ")
+    }
+
+    // MARK: Blocks
+
+    /// What the note's `/` menu turns a line into, and the Markdown each
+    /// starts the line with.
+    enum Block: CaseIterable, Equatable {
+        case text, heading1, heading2, heading3, bullet, numbered, checklist, quote, code, divider
+
+        var label: String {
+            switch self {
+            case .text: "Text"
+            case .heading1: "Heading 1"
+            case .heading2: "Heading 2"
+            case .heading3: "Heading 3"
+            case .bullet: "Bullet list"
+            case .numbered: "Numbered list"
+            case .checklist: "Checklist"
+            case .quote: "Quote"
+            case .code: "Code"
+            case .divider: "Divider"
+            }
+        }
+
+        var symbol: String {
+            switch self {
+            case .text: "text.alignleft"
+            case .heading1: "textformat.size.larger"
+            case .heading2: "textformat.size"
+            case .heading3: "textformat.size.smaller"
+            case .bullet: "list.bullet"
+            case .numbered: "list.number"
+            case .checklist: "checklist"
+            case .quote: "text.quote"
+            case .code: "chevron.left.forwardslash.chevron.right"
+            case .divider: "minus"
+            }
+        }
+
+        /// The shortcut that makes the same block as it's typed.
+        var shortcut: String {
+            switch self {
+            case .text: ""
+            case .heading1: "#"
+            case .heading2: "##"
+            case .heading3: "###"
+            case .bullet: "-"
+            case .numbered: "1."
+            case .checklist: "[]"
+            case .quote: ">"
+            case .code: "```"
+            case .divider: "---"
+            }
+        }
+
+        private var terms: [String] {
+            switch self {
+            case .text: ["text", "paragraph", "plain"]
+            case .heading1: ["heading", "h1", "title"]
+            case .heading2: ["heading", "h2", "subheading"]
+            case .heading3: ["heading", "h3"]
+            case .bullet: ["bullet", "list", "unordered"]
+            case .numbered: ["numbered", "list", "ordered"]
+            case .checklist: ["checklist", "todo", "task", "checkbox", "box"]
+            case .quote: ["quote", "blockquote"]
+            case .code: ["code", "snippet"]
+            case .divider: ["divider", "rule", "line", "separator"]
+            }
+        }
+
+        /// The blocks a `/query` brings up, in the menu's order.
+        static func matching(_ query: String) -> [Block] {
+            let needle = query.lowercased().trimmingCharacters(in: .whitespaces)
+            guard !needle.isEmpty else { return allCases }
+            return allCases.filter { block in
+                block.label.lowercased().contains(needle) || block.terms.contains { $0.hasPrefix(needle) }
+            }
+        }
+
+        /// `line`'s words as this block, its own syntax taken off first, and
+        /// where the caret goes in what's returned.
+        func line(from text: String) -> (text: String, caret: Int) {
+            let words = NoteMarkdown.words(of: text)
+            switch self {
+            case .text: return (words, 0)
+            case .heading1: return ("# " + words, 2)
+            case .heading2: return ("## " + words, 3)
+            case .heading3: return ("### " + words, 4)
+            case .bullet: return ("- " + words, 2)
+            case .numbered: return ("1. " + words, 3)
+            case .checklist: return ("- [ ] " + words, 6)
+            case .quote: return ("> " + words, 2)
+            case .code: return ("```\n" + words + "\n```", 4)
+            case .divider: return ("---\n" + words, 4)
+            }
+        }
+    }
+
+    /// A line's words without the syntax that opens it.
+    static func words(of line: String) -> String {
+        guard let first = lines(in: line).first, first.prefix.length > 0 else { return line }
+        return (line as NSString).substring(from: first.prefix.length)
+    }
+
+    // MARK: Typing
+
+    /// A box typed as the list document's shortcut, `[]` or `[ ]`, which the
+    /// space after it turns into a checklist item.
+    static func isChecklistShortcut(_ line: String) -> Bool {
+        let trimmed = line.trimmingCharacters(in: .whitespaces)
+        return trimmed == "[]" || trimmed == "[ ]"
+    }
+
+    /// The checklist item on `line` ticked, or unticked.
+    static func toggledTask(_ line: String) -> String? {
+        let whole = NSRange(location: 0, length: (line as NSString).length)
+        guard let match = task.firstMatch(in: line, range: whole) else { return nil }
+        let box = match.range(at: 3)
+        let ticked = (line as NSString).substring(with: box) != " "
+        return (line as NSString).replacingCharacters(in: box, with: ticked ? " " : "x")
     }
 
     private static func regex(_ pattern: String) -> NSRegularExpression {
