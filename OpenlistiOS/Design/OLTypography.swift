@@ -61,8 +61,6 @@ enum OLFont {
     static let note = Font.subheadline
     /// 12/16 semibold: a timeline block.
     static let timelineBlock = Font.caption.weight(.semibold)
-    /// 13/18 bold: the working block's title.
-    static let timelineBlockStrong = Font.footnote.weight(.bold)
     /// 11/14 semibold: a week strip's weekday.
     static let weekday = Font.caption2.weight(.semibold)
     /// 17/22 semibold: a week strip's date.

@@ -30,4 +30,12 @@ enum OLFormat {
     static func range(_ start: Date, _ end: Date, calendar: Calendar = .current) -> String {
         "\(CompactText.clock(start, calendar: calendar))–\(CompactText.clock(end, calendar: calendar))"
     }
+
+    /// A length or a wait as the schedule says it: "40 min", "1h", "3h 20m".
+    static func span(_ minutes: Int) -> String { minutes < 60 ? "\(minutes) min" : NXFormat.minutes(minutes) }
+
+    /// Whole minutes from `now` to `date`, a started one counted, never fewer than one.
+    static func minutes(from now: Date, to date: Date) -> Int {
+        max(1, Int((date.timeIntervalSince(now) / 60).rounded(.up)))
+    }
 }

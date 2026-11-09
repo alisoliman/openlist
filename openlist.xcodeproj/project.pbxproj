@@ -234,6 +234,8 @@
 				Services/WidgetCommandProcessor.swift,
 				Services/WidgetLinkRouter.swift,
 				Services/WidgetSnapshotPublisher.swift,
+				Views/CalendarOverlapLayout.swift,
+				Views/TodaySchedule.swift,
 			);
 			target = 0A1051000000000000000020 /* OpenlistiOS */;
 		};

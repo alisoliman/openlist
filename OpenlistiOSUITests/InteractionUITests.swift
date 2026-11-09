@@ -105,7 +105,7 @@ final class InteractionUITests: XCTestCase {
     @MainActor
     func testTimelineBlockMenu() {
         let app = launch("timeline")
-        let block = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Update the design role scorecard, 30m'")).firstMatch
+        let block = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Update the design role scorecard, 13:00 to 13:30'")).firstMatch
         XCTAssertTrue(block.waitForExistence(timeout: 5))
         block.press(forDuration: 1.2)
         XCTAssertTrue(app.buttons["Move 15 minutes earlier"].waitForExistence(timeout: 5))

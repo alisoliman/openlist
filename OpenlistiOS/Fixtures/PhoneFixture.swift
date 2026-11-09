@@ -32,11 +32,18 @@ enum PhoneFixture {
         0, 2, 1, 3, 0, 1, 0, 1, 0, 2, 1, 0, 0, 2, 0, 1, 3, 0, 1, 2, 1, 1, 2, 2,
     ]
 
-    /// The timeline mockup's meeting: Design sync, 14:00–15:00 today.
+    /// Today's meetings: the timeline mockup's Design sync, 14:00–15:00, and
+    /// the morning's team standup, 09:30–09:45, beside Standup notes' slot.
     static func meetings(now: Date, calendar: Calendar = .current) -> [FixedBusyTime] {
         let today = calendar.startOfDay(for: now)
-        guard let start = calendar.date(bySettingHour: 14, minute: 0, second: 0, of: today) else { return [] }
-        return [FixedBusyTime(id: "fixture-design-sync", title: "Design sync", start: start, end: start.addingTimeInterval(3600))]
+        guard let standup = calendar.date(bySettingHour: 9, minute: 30, second: 0, of: today),
+              let sync = calendar.date(bySettingHour: 14, minute: 0, second: 0, of: today) else { return [] }
+        return [
+            FixedBusyTime(id: "fixture-team-standup", title: "Team standup", start: standup,
+                          end: standup.addingTimeInterval(15 * 60), location: "Video call", calendarTitle: "Work"),
+            FixedBusyTime(id: "fixture-design-sync", title: "Design sync", start: sync, end: sync.addingTimeInterval(3600),
+                          location: "Studio, 3rd floor", calendarTitle: "Work"),
+        ]
     }
 
     struct Seeded {

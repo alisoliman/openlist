@@ -198,15 +198,7 @@ struct SettingsScreen: View {
 
     private func connectCalendar() {
         guard !calendarAccess else { return }
-        let source = env.calendar.externalCalendars
-        Task {
-            await source.requestAccess()
-            if source.isAuthorized {
-                env.calendar.refreshCalendars(now: env.now)
-            } else if let url = URL(string: UIApplication.openSettingsURLString) {
-                await UIApplication.shared.open(url)
-            }
-        }
+        PhoneSchedule.connect(env)
     }
 
     // MARK: Sync

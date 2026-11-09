@@ -61,7 +61,7 @@ final class ScreensUITests: XCTestCase {
         app.buttons["today.timeline"].tap()
         app.waitForScreen("screen.timeline")
         XCTAssertTrue(app.element(beginningWith: "Draft Q3 OKRs, Now ·").exists)
-        XCTAssertTrue(app.element(beginningWith: "Design sync, Calendar event").exists)
+        XCTAssertTrue(app.element(beginningWith: "Design sync, meeting, 14:00 to 15:00").exists)
         snap(app, "timeline")
         app.buttons["timeline.toPlan"].tap()
         XCTAssertTrue(app.screen("tray").waitForExistence(timeout: 5))
@@ -95,7 +95,7 @@ final class ScreensUITests: XCTestCase {
         XCTAssertFalse(app.buttons.matching(identifier: "plan.chip").matching(NSPredicate(format: "label BEGINSWITH %@", title))
             .firstMatch.exists, "A planned task leaves the row")
         snap(app, "timeline-dropped")
-        let block = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Write interview feedback for Priya, 20m'")).firstMatch
+        let block = app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Write interview feedback for Priya, 11:30'")).firstMatch
         XCTAssertTrue(block.exists)
         block.coordinate(withNormalizedOffset: CGVector(dx: 0.3, dy: 0.5))
             .press(forDuration: 1.2, thenDragTo: card.coordinate(withNormalizedOffset: CGVector(dx: 0.6, dy: 0.95)),

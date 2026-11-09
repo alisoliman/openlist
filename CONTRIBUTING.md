@@ -155,7 +155,9 @@ line there and run `python3 Tools/add-ios-targets.py`, which writes the list
 into the project's exception sets; don't tick target membership in Xcode's File
 inspector. `run-ios-core-checks.sh` fails while the project and the list
 disagree, when a Mac UI file from `openlist/Next`, `Views` or `Editor` joins
-iOS, or when a `Model` file is missing (both apps must build the same CloudKit
+iOS (only the Foundation-only models it names may, such as `TodaySchedule` and
+`CalendarOverlapLayout`, which both platforms' Today and calendar draw), or
+when a `Model` file is missing (both apps must build the same CloudKit
 schema), then type-checks what the project compiles in Debug, Dev and Release.
 Keep platform differences in shared files behind `#if os(macOS)` in place, and
 never add iOS-only files to `openlist/` or `Shared/`: code the iOS app and
@@ -194,6 +196,7 @@ screenshots (`xcrun simctl launch` passes them as `SIMCTL_CHILD_<name>`):
 | `OpenlistFixtureNow` | Pins the app's clock (`AppClock`) to an ISO 8601 moment; `2026-09-23T10:40:00` is the mockups' |
 | `OpenlistOpenRoute` | Opens a screen at launch: `today`, `timeline`, `inbox`, `lists`, `work`, `settings`, `trash`, `capture`, `voice` (Capture, listening), `working`, `triage`, `triage:undated` (its No date pass), `activity`, `find:#travel`, `list:<title>`, `task:<title>` |
 | `OpenlistShowTray` | Shows its text in the tray, with Undo |
+| `OpenlistReviewMeetings` | The review calendar: `NO` leaves no calendar connected, `none` gives a connected calendar with nothing on it; otherwise the fixture's meetings |
 | `OpenlistCaptureText` | Types its text into the Capture sheet |
 | `OpenlistVoiceRecording` | A recording's path, which voice capture listens to in place of the microphone (the Mac's Dev and Debug builds too) |
 | `OpenlistVoiceFixture` | Offline voice UX fixture: shows Listening until Done/Return, then reads each newline-separated task without a microphone, permission prompt or model (Debug/Dev review sessions only) |
@@ -211,12 +214,16 @@ Screens read the library from `\.phoneLibrary`, the Mac's `NextLibrary` built
 once a render from the root's queries (`App/PhoneLibrary.swift`), and word rows
 through `PhoneTaskRow`. What's worked on now (Today's Now card, Working, the
 timeline's working block and the Live Activity) is `PhoneWork`, read from the
-calendar coordinator. The widget extension draws Today, Inbox and Up next from
+calendar coordinator. The rest of the day's schedule, what's on now and next,
+meetings included, comes from the Mac's `TodaySchedule` through
+`Features/Today/PhoneSchedule.swift`, which Today's Now card and the
+Timeline both read. The widget extension draws Today, Inbox and Up next from
 the published snapshot with the Mac widgets' model, and the work Live Activity
 from `SharediOS/WorkActivity.swift`, which the app starts, updates and ends
 (`App/PhoneLiveActivity.swift`); its buttons are the widgets' intents, run in
 the app. A review session's calendar is a fixture holding the mockups' Design
-sync meeting, and its Live Activity counts on the system clock. Review sessions
+sync meeting and a morning standup, and its Live Activity counts on the
+system clock. Review sessions
 keep the widget snapshot out of the App Group, so placed widgets there show
 their placeholder and the gallery its sample.
 
