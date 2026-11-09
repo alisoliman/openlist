@@ -634,7 +634,7 @@ private struct NXScheduleSummary: View {
         let time = item.isActive ? "Working, until \(NXFormat.clock(item.end))"
             : current ? "until \(NXFormat.clock(item.end))"
             : "\(NXFormat.clock(item.start)) · in \(NXDay.span(NXDay.minutes(from: now, to: item.start)))"
-        let place = item.kind == .meeting ? item.meeting?.location : list?.displayTitle
+        let place = item.kind == .meeting ? item.place : list?.displayTitle
         let detail = [time, place].compactMap { $0 }.joined(separator: " · ")
         // Start where a session is planned now and nothing's in hand, as the
         // Calendar's Planned now banner offers it.
@@ -1132,9 +1132,9 @@ private struct NXMeetingDetails: View {
                     .font(.system(size: 11.5))
                     .foregroundStyle(NX.textTertiary)
             }
-            if meeting.location != nil || meeting.calendarTitle != nil {
+            if meeting.place != nil || meeting.calendarTitle != nil {
                 VStack(alignment: .leading, spacing: 4) {
-                    if let location = meeting.location { detail("mappin.and.ellipse", location) }
+                    if let place = meeting.place { detail("mappin.and.ellipse", place) }
                     if let calendar = meeting.calendarTitle { detail("calendar", calendar) }
                 }
                 .padding(.top, 2)
@@ -1169,7 +1169,7 @@ private struct NXMeetingDetails: View {
 
     /// The details as VoiceOver reads them with the meeting.
     static func spoken(_ meeting: FixedBusyTime) -> String {
-        ["\(NXFormat.clock(meeting.start)) to \(NXFormat.clock(meeting.end))", meeting.location,
+        ["\(NXFormat.clock(meeting.start)) to \(NXFormat.clock(meeting.end))", meeting.place,
          meeting.calendarTitle.map { "\($0) calendar" }].compactMap { $0 }.joined(separator: ", ")
     }
 }

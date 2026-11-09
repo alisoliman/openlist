@@ -34,15 +34,20 @@ enum PhoneFixture {
 
     /// Today's meetings: the timeline mockup's Design sync, 14:00–15:00, and
     /// the morning's team standup, 09:30–09:45, beside Standup notes' slot.
-    static func meetings(now: Date, calendar: Calendar = .current) -> [FixedBusyTime] {
+    /// With `links`, each is held online, its place a link: a Teams meeting
+    /// link for Design sync, a Zoom one for the standup.
+    static func meetings(now: Date, calendar: Calendar = .current, links: Bool = false) -> [FixedBusyTime] {
         let today = calendar.startOfDay(for: now)
         guard let standup = calendar.date(bySettingHour: 9, minute: 30, second: 0, of: today),
               let sync = calendar.date(bySettingHour: 14, minute: 0, second: 0, of: today) else { return [] }
         return [
             FixedBusyTime(id: "fixture-team-standup", title: "Team standup", start: standup,
-                          end: standup.addingTimeInterval(15 * 60), location: "Video call", calendarTitle: "Work"),
+                          end: standup.addingTimeInterval(15 * 60),
+                          location: links ? "https://us02web.zoom.us/j/81234567890?pwd=Q2F0Y2hVcA" : "Video call",
+                          calendarTitle: "Work"),
             FixedBusyTime(id: "fixture-design-sync", title: "Design sync", start: sync, end: sync.addingTimeInterval(3600),
-                          location: "Studio, 3rd floor", calendarTitle: "Work"),
+                          location: links ? "https://teams.microsoft.com/meet/38291045672?p=Xk2Lm9QwRt" : "Studio, 3rd floor",
+                          calendarTitle: "Work"),
         ]
     }
 

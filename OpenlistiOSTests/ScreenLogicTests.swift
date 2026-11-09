@@ -93,6 +93,7 @@ struct ScreenLogicTests {
         let card = try nowNext(phone)
         #expect(card.lines.first?.kind == .work(.paused))
         #expect(card.lines.first?.detail == "Paused · 50 min left · Q3 planning")
+        #expect(card.lines.first?.brief == "Paused")
     }
 
     // MARK: Today's Now card
@@ -119,6 +120,8 @@ struct ScreenLogicTests {
         #expect(card.lines[1].detail == "11:30 · in 50 min · Hiring loop")
         #expect(card.lines[1].listID == phone.list("Hiring loop")?.id)
         #expect(card.emptyText == nil)
+        // Folded to one line, the card says the time alone.
+        #expect(card.lines.map(\.brief) == ["50 min left", "11:30"])
     }
 
     /// A meeting under way is now beside the work, and one ahead is next,
@@ -131,12 +134,14 @@ struct ScreenLogicTests {
         #expect(card.lines.map(\.title) == ["Draft Q3 OKRs", "Design sync"])
         #expect(card.lines[1].role == .next && card.lines[1].kind == .meeting)
         #expect(card.lines[1].detail == "14:00 · in 10 min · Studio, 3rd floor")
+        #expect(card.lines[1].brief == "14:00")
         #expect(card.lines[1].meeting?.calendarTitle == "Work")
 
         let at1420 = at1350.addingTimeInterval(30 * 60)
         let later = try nowNext(phone, now: at1420)
         #expect(later.lines.map(\.role) == [.now, .alsoNow, .next])
         #expect(later.lines[1].title == "Design sync" && later.lines[1].detail == "Until 15:00 · Studio, 3rd floor")
+        #expect(later.lines[1].brief == "Until 15:00")
         #expect(later.lines[2].title == "Order new water filters")
         #expect(later.lines[2].detail == "16:30 · in 2h 10m · Home")
     }
@@ -151,6 +156,7 @@ struct ScreenLogicTests {
         #expect(card.lines.first?.title == "Draft Q3 OKRs")
         #expect(card.lines.first?.kind == .work(.planned))
         #expect(card.lines.first?.detail == "Until 11:30 · Q3 planning")
+        #expect(card.lines.first?.brief == "Until 11:30")
         #expect(card.lines.last?.role == .next)
     }
 
@@ -214,6 +220,13 @@ struct ScreenLogicTests {
         let fixture = try #require(PhoneEnvironment.reviewMeetings(defaults: defaults, now: now, environment: [:]))
         #expect(fixture.busyTimes(in: DateInterval(start: now.addingTimeInterval(-86_400), duration: 172_800)).map(\.title)
                 == ["Team standup", "Design sync"])
+        // Online, their places are links, which the card names as the service.
+        let links = try #require(PhoneEnvironment.reviewMeetings(defaults: defaults, now: now,
+                                                                 environment: ["OpenlistReviewMeetings": "links"]))
+        let online = links.busyTimes(in: DateInterval(start: now.addingTimeInterval(-86_400), duration: 172_800))
+        #expect(online.map(\.title) == ["Team standup", "Design sync"])
+        #expect(online.allSatisfy { $0.location?.hasPrefix("https://") == true })
+        #expect(online.map(\.place) == ["Zoom", "Microsoft Teams"])
     }
 
     /// A meeting's details say how far off it is, in the schedule's words.

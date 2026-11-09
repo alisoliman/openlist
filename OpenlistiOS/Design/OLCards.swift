@@ -248,6 +248,89 @@ struct OLNowCardLine: View {
     }
 }
 
+/// The Now card folded to one line: what's on now, or what's next, and
+/// when, "NOW  Design review  Until 11:30", or what the card says with
+/// nothing on. The title gives way before the time does. At accessibility
+/// sizes the label, title and time stack, as a line's do.
+struct OLNowCardSummary: View {
+    /// Nil for the card's empty text, which stands alone.
+    var role: OLNowRole?
+    let title: String
+    var time: String?
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    /// As `OLNowCardLine`'s, so the folded title starts where it did.
+    @ScaledMetric(relativeTo: .caption2) private var labelWidth: CGFloat = 46
+
+    var body: some View {
+        Group {
+            if let role {
+                if dynamicTypeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: 4) {
+                        label(role)
+                        titleText.lineLimit(2)
+                        if let time { timeText(time) }
+                    }
+                } else {
+                    HStack(alignment: .firstTextBaseline, spacing: 0) {
+                        label(role).fixedSize().frame(width: labelWidth, alignment: .leading)
+                        titleText.lineLimit(1)
+                        if let time { timeText(time).fixedSize().padding(.leading, 8) }
+                    }
+                }
+            } else {
+                Text(title)
+                    .font(OLFont.note)
+                    .foregroundStyle(OL.muted)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+            }
+        }
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+    }
+
+    private func label(_ role: OLNowRole) -> some View {
+        Text(role.label)
+            .olCaps()
+            .foregroundStyle(OL.muted)
+    }
+
+    private var titleText: some View {
+        Text(title)
+            .font(OLFont.rowTitle.weight(role == .next ? .medium : .semibold))
+            .foregroundStyle(OL.ink)
+    }
+
+    private func timeText(_ time: String) -> some View {
+        Text(time)
+            .font(OLFont.meta)
+            .monospacedDigit()
+            .foregroundStyle(OL.muted)
+            .contentTransition(.numericText(countsDown: true))
+    }
+}
+
+/// The Now card's fold: a quiet chevron in its top line that points down
+/// while the card is folded to one line and turns up once it's open.
+/// VoiceOver reads it as the schedule, expanded or collapsed.
+struct OLNowCardFold: View {
+    let isFolded: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "chevron.down")
+                .font(OLFont.meta.weight(.semibold))
+                .foregroundStyle(OL.muted)
+                .rotationEffect(.degrees(isFolded ? 0 : 180))
+                .frame(width: 44, height: 44)
+                .contentShape(.rect)
+        }
+        .buttonStyle(OLPressStyle())
+        .accessibilityLabel("Schedule")
+        .accessibilityValue(isFolded ? "Collapsed" : "Expanded")
+        .accessibilityHint(isFolded ? "Shows the whole schedule" : "Folds the schedule to one line")
+    }
+}
+
 /// A quiet note under the Now card's lines, with one small button: "4 tasks
 /// have no time yet · Fit", "No calendar connected · Connect".
 struct OLNowNote: View {

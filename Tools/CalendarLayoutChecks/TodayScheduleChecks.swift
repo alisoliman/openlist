@@ -92,3 +92,53 @@ func todayScheduleChecks() {
     expect(ids(yesterday.items) == ["yesterday", "night shift"] && yesterday.current.isEmpty && yesterday.next == nil,
            "A day gone by has nothing now or next, and a slot into today still shows on it")
 }
+
+/// A meeting's place as Today's lines name it, on the Mac and the iPhone: a
+/// link as the service it opens, or its bare domain; a room as it is.
+@MainActor
+func meetingPlaceChecks() {
+    func name(_ location: String) -> String { MeetingPlace.name(location) }
+    expect(name("https://teams.microsoft.com/meet/38291045672?p=Xk2Lm9Qw") == "Microsoft Teams",
+           "A Teams link reads Microsoft Teams")
+    expect(name("https://teams.microsoft.com/l/meetup-join/19%3ameeting_Zm%40thread.v2/0?context=%7b%7d") == "Microsoft Teams",
+           "A Teams join link reads Microsoft Teams")
+    expect(name("https://us02web.zoom.us/j/81234567890?pwd=Q2F0Y2g") == "Zoom", "A Zoom link on a subdomain reads Zoom")
+    expect(name("zoommtg://zoom.us/join?confno=81234567890") == "Zoom", "Zoom's app link reads Zoom")
+    expect(name("https://meet.google.com/abc-defg-hij") == "Google Meet", "A Meet link reads Google Meet")
+    expect(name("meet.google.com/abc-defg-hij") == "Google Meet", "A link without its scheme is named too")
+    expect(name("https://acme.webex.com/meet/sam") == "Webex", "A Webex link reads Webex")
+    expect(name("https://www.example.com/events/1?ref=cal") == "example.com", "Another link reads as its bare domain")
+    expect(name("http://events.example.org") == "events.example.org", "A subdomain stays, only www goes")
+    expect(name("<https://zoom.us/j/1>") == "Zoom", "A link in angle brackets is named")
+    expect(name("https://maps.app.goo.gl/Xy12") == "Google Maps" && name("https://www.google.com/maps/place/Amsterdam") == "Google Maps",
+           "Google Maps' links read Google Maps")
+
+    // Places that aren't links stay as the calendar has them.
+    for place in ["Studio, 3rd floor", "Microsoft Teams Meeting", "Room 4.12", "St.Mary", "Café Lumen", "Amsterdam.NL",
+                  "sam@example.com", "Video call", "example.com"] {
+        expect(name(place) == place, "\(place) stays as it is")
+    }
+
+    // A place with words and a link keeps the words, naming the link only
+    // where they don't already.
+    expect(name("Microsoft Teams Meeting; https://teams.microsoft.com/l/meetup-join/19") == "Microsoft Teams Meeting",
+           "A link the words already name adds nothing")
+    expect(name("Zoom Meeting https://zoom.us/j/1") == "Zoom Meeting", "So does one named in the same part")
+    expect(name("Teams https://teams.microsoft.com/l/1") == "Microsoft Teams", "A service's full name replaces a shorter one")
+    expect(name("Room 4.12 / https://zoom.us/j/1") == "Room 4.12, Zoom", "A room and a link read as the room, then the service")
+    expect(name("https://zoom.us/j/1\nhttps://zoom.us/j/2") == "Zoom", "Two links to one service name it once")
+    expect(name("Online (https://meet.google.com/abc-defg-hij)") == "Online, Google Meet", "A link in brackets is named")
+
+    // The model reads a meeting's place through it; a session has none.
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = TimeZone(identifier: "Europe/Amsterdam")!
+    let start = calendar.date(from: DateComponents(year: 2026, month: 11, day: 9, hour: 17))!
+    let meeting = FixedBusyTime(id: "sql", title: "SQL Enablement", start: start, end: start.addingTimeInterval(3600),
+                                location: "https://teams.microsoft.com/meet/38291045672?p=Xk2Lm9Qw")
+    let session = PlannedBlock(id: "s", taskID: UUID(), occurrenceID: UUID(), start: start.addingTimeInterval(3600),
+                               end: start.addingTimeInterval(5400), isPinned: true, placementID: UUID(), conflicts: [])
+    let schedule = TodaySchedule(blocks: [session], busy: [meeting], now: start.addingTimeInterval(-6360), calendar: calendar)
+    expect(schedule.next?.place == "Microsoft Teams", "Next names a meeting's linked place")
+    expect(schedule.items.last?.kind == .session && schedule.items.last?.place == nil, "A session has no place of its own")
+    expect(FixedBusyTime(id: "x", title: "x", start: start, end: start).place == nil, "No place stays no place")
+}

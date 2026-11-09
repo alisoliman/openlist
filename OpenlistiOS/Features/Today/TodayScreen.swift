@@ -64,7 +64,7 @@ private struct TodayPage: View {
             if clear {
                 // A meeting still to come keeps its line above the clear day.
                 if schedule.hasRest {
-                    TodayScheduleCard(schedule: schedule, work: work, now: now, showsNotes: false)
+                    TodayScheduleCard(schedule: schedule, work: work, now: now, showsNotes: false, folds: true)
                         .padding(.top, OLMetrics.headerGap)
                 }
                 if env.awaitsFirstImport(library) {
@@ -83,7 +83,8 @@ private struct TodayPage: View {
             } else {
                 TodayScheduleCard(schedule: schedule, work: work, now: now,
                                   toPlan: PhoneSchedule.unplaced(agenda.scheduled, slotted: { slots[$0] != nil },
-                                                                 workID: work.task?.id, closing: env.actions.closing))
+                                                                 workID: work.task?.id, closing: env.actions.closing),
+                                  folds: true)
                     .padding(.top, OLMetrics.headerGap)
                 taskGroup("Overdue", symbol: "exclamationmark.circle.fill", color: OL.danger,
                           tasks: agenda.overdue, slots: slots, nowID: work.task?.id)
@@ -135,6 +136,9 @@ private struct TodayPage: View {
                 }
             }
             .padding(.top, OLMetrics.groupGap)
+            // Moved as one when the page shifts, as the schedule folding
+            // does, so the due menus drawn over the rows move with them.
+            .geometryGroup()
         }
     }
 

@@ -48,7 +48,8 @@ line, from an hour before now to the day's last item. **Earlier today** unfolds
 the part of the day already gone. Meetings are quiet grey blocks; planned task
 sessions look as they do on the Calendar, cards with the task's checkbox in its
 list's colour, and the item under way or next is drawn heavier. Hovering a meeting shows its time,
-length, place and calendar. Clicking a session selects its task, as a row click
+length, place and calendar. A place that is a link reads as the service it opens, such as
+**Microsoft Teams**, **Zoom** or **Google Meet**, or as the link's bare domain. Clicking a session selects its task, as a row click
 does, and double-clicking opens it; its menu also has **Remove from Calendar**
 and **Show in Calendar**. A session planned now offers **Start**.
 
@@ -65,6 +66,11 @@ depends on the room the page has without the inspector, so opening a task never
 moves the rows. `TodaySchedule` (in `openlist/Views`) picks the day, now and
 next out of `CalendarCoordinator.visibleBlocks` and the calendars' busy time; it
 never plans.
+
+On the iPhone, **Today** puts what's on now and next in a card above the tasks.
+Its chevron folds the card to one line, what's on now or next and when, or that
+nothing is, and a tap on that line opens it again. The card stays folded across
+launches.
 
 ## Available hours and meetings
 
