@@ -14,8 +14,8 @@ concurrency:
 jobs:
   check:
     runs-on: xcode-27
-    # About 20 minutes: the regression checks, then the release build.
-    timeout-minutes: 35
+    # 19 to 28 minutes: the regression checks, then the release build.
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -55,8 +55,10 @@ jobs:
       fail-fast: false
       matrix:
         part: [1, 2, 3]
-    # About 25 minutes: the boot, the build, then a part of the tests.
-    timeout-minutes: 45
+    # 23 to 38 minutes: the build, the simulator's boot, then a part of the
+    # tests. Room for a slow runner and a test's second run, while a hung
+    # test still ends well before the old single job's 75.
+    timeout-minutes: 55
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

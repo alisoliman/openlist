@@ -15,7 +15,8 @@ cd "$(dirname "$0")/.."
 # time each, the unit tests going with the first. The third part runs every
 # other UI test class, so a new class always runs somewhere.
 PART1=(ScreensUITests TaskSwipeUITests ListAppearanceUITests LaunchTests)
-PART2=(InteractionUITests PaperAppearanceUITests CaptureTriageUITests TaskDueMenuUITests TaskDetailContextUITests ShellUITests)
+PART2=(InteractionUITests PaperAppearanceUITests CaptureTriageUITests TaskDueMenuUITests TaskDetailContextUITests ShellUITests
+    ListsTasksUITests)
 SELECT=()
 BUNDLES="OpenlistiOSTests OpenlistiOSUITests"
 case "${OPENLIST_IOS_PART:-}" in
