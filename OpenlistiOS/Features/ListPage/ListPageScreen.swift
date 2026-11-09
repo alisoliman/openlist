@@ -37,7 +37,7 @@ struct ListPageScreen: View {
         let children = list.map(library.children(of:)) ?? []
         let doneOpen = showsDone ?? list?.showsCompleted(default: env.settings.showsCompletedTasks) ?? false
         OLScreen(identifier: PhoneRoute.list(listID).screenIdentifier) {
-            OLListHeaderBand(icon: list?.icon ?? "📋", accent: list?.accent ?? .graphite, isInbox: list?.isSystemInbox == true,
+            OLListHeaderBand(icon: list?.icon ?? "📋", accent: list?.accent ?? .graphite,
                              editAppearance: list?.isSystemInbox == false ? { editsAppearance = true } : nil) {
                 OLTopBar {
                     OLBackButton(env.backTitle(for: .list(listID))) { navigator.pop() }

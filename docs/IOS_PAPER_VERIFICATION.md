@@ -4,7 +4,7 @@ Reference: [Openlist iOS companion v2 “Paper”](https://claude.ai/artifact/Lg
 
 ## Acceptance
 
-- Warm canvas, white cards, serif screen titles, neutral ink controls, task metadata below titles, grouped Today sections and progress.
+- Neutral canvas, white cards, serif screen titles, neutral ink controls, task metadata below titles, grouped Today sections and progress.
 - Today, Inbox, Lists and Work remain reachable from the floating dock. Preserve existing timeline, capture, task detail, work and undo flows.
 - Long right swipe adds the task to Today while preserving its due date. Repeating it is idempotent.
 - Short right swipe exposes two compact actions. Both are configurable in Settings and persist across launches. Defaults: Move to list and Star.

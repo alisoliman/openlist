@@ -86,7 +86,7 @@ struct PhoneTaskSwipe: ViewModifier {
                 if armed == .today {
                     Label("Today", systemImage: "sun.max.fill")
                         .font(OLFont.meta)
-                        .foregroundStyle(OL.todayText)
+                        .foregroundStyle(OL.onAccent)
                         .padding(.leading, 10)
                         .accessibilityHidden(true)
                 } else {
@@ -97,7 +97,7 @@ struct PhoneTaskSwipe: ViewModifier {
             }
             .padding(.horizontal, 6)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(armed == .today ? OL.todaySoft : OL.sunken)
+            .background(armed == .today ? OL.accent : OL.sunken)
         } else if offset < 0 {
             HStack {
                 Spacer(minLength: 0)
@@ -124,7 +124,7 @@ struct PhoneTaskSwipe: ViewModifier {
     /// A shortcut that can't apply stays dimmed but tappable, and says why.
     private func actionButton(_ action: TaskSwipeAction, slot: String) -> some View {
         let symbol = action == .star && task.isStarred ? "star.fill" : action == .complete && completed ? "arrow.uturn.backward" : action.symbol
-        return circleButton(actionTitle(action), symbol: symbol, ink: action == .star ? OL.todayText : OL.accentText,
+        return circleButton(actionTitle(action), symbol: symbol, ink: action == .star ? OL.starText : OL.accentText,
                             fill: OL.surface) { perform(action) }
             .opacity(isAvailable(action) ? 1 : 0.4)
             .accessibilityIdentifier("task.swipe.\(slot)")

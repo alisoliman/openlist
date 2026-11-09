@@ -70,8 +70,7 @@ struct TriageScreen: View {
                 OLViewPicker.Option(value: pass, title: pass.title, symbol: pass.symbol, identifier: "triage.mode.\(pass.rawValue)")
             }, selection: $navigator.triageMode)
                 .padding(.top, 6)
-            OLProgressBar(value: total == 0 ? 1 : Double(reviewed) / Double(total), tint: OL.info,
-                          turnsGreenWhenFull: false)
+            OLProgressBar(value: total == 0 ? 1 : Double(reviewed) / Double(total), turnsGreenWhenFull: false)
                 .padding(.top, 16)
             if let card {
                 Group {
@@ -479,7 +478,7 @@ private struct TriageCardHeader: View {
 
     var body: some View {
         HStack(alignment: .center) {
-            Text(caps).olCaps().foregroundStyle(OL.infoText)
+            Text(caps).olCaps().foregroundStyle(OL.muted)
             Spacer(minLength: 8)
             OLIconButton("info.circle", label: "Details", kind: .bare, iconSize: 18) {
                 env.navigator.open(.taskDetail(task.id))
@@ -511,10 +510,11 @@ private struct TriageContext: View {
                         .lineLimit(3)
                         .accessibilityLabel("Note: \(task.note)")
                 }
-                if !facts.isEmpty {
-                    Text(facts.joined(separator: " · "))
+                if let first = facts.first {
+                    facts.dropFirst().reduce(first.text) { line, fact in Text("\(line) · \(fact.text)") }
                         .font(OLFont.meta)
                         .foregroundStyle(OL.muted)
+                        .accessibilityLabel(facts.map(\.spoken).joined(separator: " · "))
                 }
             }
             .padding(.top, 10)
@@ -523,17 +523,22 @@ private struct TriageContext: View {
         }
     }
 
-    private var facts: [String] {
-        var facts: [String] = []
+    /// Each fact as it reads, a label's with its colour as a dot, and as
+    /// VoiceOver hears it.
+    private var facts: [(text: Text, spoken: String)] {
+        var facts: [(text: Text, spoken: String)] = []
+        func add(_ words: String) { facts.append((Text(words), words)) }
         if let due = CompactText.due(task.dueDate, includesTime: task.includesTime, now: now, calendar: env.settings.calendar) {
-            facts.append(due.text)
+            add(due.text)
         }
-        if task.priority != .none { facts.append("\(task.priority.title) priority") }
-        facts += task.labelIDs.compactMap { library.label($0) }.map { "#" + $0.name }
+        if task.priority != .none { add("\(task.priority.title) priority") }
+        for label in task.labelIDs.compactMap({ library.label($0) }) {
+            facts.append((Text.olLabel(label.name, color: label.accent.color), "#" + label.name))
+        }
         let subtasks = task.listID.map { listID in library.tasks(in: listID).filter { $0.parentID == task.id } } ?? []
-        if !subtasks.isEmpty { facts.append(subtasks.count == 1 ? "1 subtask" : "\(subtasks.count) subtasks") }
+        if !subtasks.isEmpty { add(subtasks.count == 1 ? "1 subtask" : "\(subtasks.count) subtasks") }
         let files = env.store.attachments(for: task.id).count
-        if files > 0 { facts.append(files == 1 ? "1 file" : "\(files) files") }
+        if files > 0 { add(files == 1 ? "1 file" : "\(files) files") }
         return facts
     }
 }

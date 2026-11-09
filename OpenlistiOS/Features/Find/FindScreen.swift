@@ -25,14 +25,19 @@ struct FindScreen: View {
         FindPage(query: query, pool: library.tasksInOutlineOrder(blocks: blocks))
     }
 
+    /// A token's words: done in green, everything else ink. A label's
+    /// colour is its dot's (`dot(of:in:library:)`), not its words'.
     static func tint(of token: String, in language: TaskQuery) -> Color {
         switch language.vocab.first(where: { $0.word == token })?.kind {
-        case .label: OL.teal
         case .date: OL.accentText
-        case .flag: OL.todayText
         case .status: OL.successText
-        case .list, nil: OL.ink
+        case .label, .flag, .list, nil: OL.ink
         }
+    }
+
+    /// A label token's own colour, for the dot before its name.
+    static func dot(of token: String, in language: TaskQuery, library: NextLibrary) -> Color? {
+        language.vocab.first { $0.word == token && $0.kind == .label }?.labelID.flatMap(library.label)?.accent.color
     }
 
     // MARK: Results
@@ -92,7 +97,8 @@ private struct FindPage: View {
             OLSearchField(text: $text, prompt: tokens.isEmpty ? "Find a task, note or #label" : "Add words or filters",
                           focus: $isFocused, clearTokens: tokens.isEmpty ? nil : { tokens = [] }) {
                 ForEach(tokens, id: \.self) { token in
-                    OLChipButton(OLChip(token, style: .token, tint: FindScreen.tint(of: token, in: language))) { remove(token) }
+                    OLChipButton(OLChip(token, style: .token, tint: FindScreen.tint(of: token, in: language),
+                                        dot: FindScreen.dot(of: token, in: language, library: library))) { remove(token) }
                         .accessibilityLabel("\(token), filter")
                         .accessibilityHint("Removes it")
                 }

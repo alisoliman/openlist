@@ -31,7 +31,7 @@ struct LabelPickerSheet: View {
                     ForEach(Array(library.labels.enumerated()), id: \.element.id) { index, label in
                         let isOn = task.labelIDs.contains(label.id)
                         Button { toggle(label, isOn: isOn) } label: {
-                            OLSettingsRow("#\(label.name)", separator: index == 0 ? .none : .inset(16)) {
+                            OLSettingsRow(label.name, dot: label.accent.color, separator: index == 0 ? .none : .inset(16)) {
                                 Image(systemName: isOn ? "checkmark.circle.fill" : "circle")
                                     .font(.system(size: 20))
                                     .foregroundStyle(isOn ? OL.accent : OL.lineStrong)

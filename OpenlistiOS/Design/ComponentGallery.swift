@@ -56,11 +56,6 @@ struct ComponentGallery: View {
                     }
                 }
             }
-            HStack(spacing: 6) {
-                ForEach(OL.Tint.allCases, id: \.self) { tint in
-                    RoundedRectangle(cornerRadius: 8, style: .continuous).fill(tint.color).frame(height: 28)
-                }
-            }
             HStack(spacing: 4) {
                 ForEach(0..<5) { level in
                     RoundedRectangle(cornerRadius: 6, style: .continuous).fill(OL.heat(level)).frame(width: 23, height: 23)
@@ -72,9 +67,10 @@ struct ComponentGallery: View {
     private static let tokens: [(String, Color)] = [
         ("canvas", OL.canvas), ("surface", OL.surface), ("sunken", OL.sunken), ("line", OL.line),
         ("lineStrong", OL.lineStrong), ("ink", OL.ink), ("muted", OL.muted), ("accent", OL.accent),
-        ("accentText", OL.accentText), ("accentSoft", OL.accentSoft), ("today", OL.today), ("todayText", OL.todayText),
-        ("danger", OL.danger), ("dangerSoft", OL.dangerSoft), ("info", OL.info), ("success", OL.success),
-        ("successText", OL.successText), ("successSoft", OL.successSoft), ("teal", OL.teal), ("amber", OL.amber),
+        ("accentText", OL.accentText), ("accentSoft", OL.accentSoft), ("controlTint", OL.controlTint),
+        ("star", OL.star), ("starText", OL.starText), ("danger", OL.danger), ("dangerSoft", OL.dangerSoft),
+        ("info", OL.info), ("success", OL.success), ("successText", OL.successText), ("successSoft", OL.successSoft),
+        ("amber", OL.amber),
     ]
 
     // MARK: Rows
@@ -113,22 +109,22 @@ struct ComponentGallery: View {
                 OLChip("Inbox", glyph: "📥", style: .on)
                 OLChip("Weekend in Kyoto", glyph: "🗻")
                 OLChip("Fri 25, 18:00", small: true, tint: OL.accentText)
-                OLChip("#travel", small: true, tint: OL.teal)
+                OLChip("travel", small: true, dot: ListAccent.blue.color)
                 OLChip("Later", style: .ink)
                 OLChip("", symbol: "calendar")
-                OLChip("#travel", style: .token, tint: OL.teal)
+                OLChip("#travel", style: .token, dot: ListAccent.blue.color)
             }
             OLSegmented([(0, "System"), (1, "Monday"), (2, "Sunday")], selection: $segment)
             VStack(spacing: 0) {
-                OLSettingsRow("Show done in lists", tile: .accent("checkmark")) {
+                OLSettingsRow("Show done in lists", tile: .symbol("checkmark")) {
                     Toggle("Show done in lists", isOn: $toggle).labelsHidden().olToggle()
                 }
-                OLSettingsRow("Week starts on", tile: .today("calendar"), separator: .settings) { OLRowValue("Monday") }
-                OLSettingsRow("Reduce motion", tile: .teal("water.waves"), separator: .settings) { OLRowValue(nil) }
-                OLSettingsRow("Calendar access", tile: .info("calendar"), separator: .settings) {
+                OLSettingsRow("Week starts on", tile: .symbol("calendar"), separator: .settings) { OLRowValue("Monday") }
+                OLSettingsRow("Reduce motion", tile: .symbol("water.waves"), separator: .settings) { OLRowValue(nil) }
+                OLSettingsRow("Calendar access", tile: .symbol("calendar"), separator: .settings) {
                     OLRowValue("On", color: OL.successText, showsChevron: false)
                 }
-                OLSettingsRow("Trash", tile: .danger("trash"), separator: .settings) { OLRowValue("3") }
+                OLSettingsRow("Trash", tile: .symbol("trash"), separator: .settings) { OLRowValue("3") }
                 OLEstimateSlider(value: estimate) { estimate = $0 }
                     .padding(.horizontal, 16)
                     .padding(.vertical, 10)
@@ -142,10 +138,10 @@ struct ComponentGallery: View {
             .olCard()
             OLSearchLink {}
             OLSearchField(text: $search, prompt: "Add words or filters") {
-                OLChip("#travel", style: .token, tint: OL.teal)
+                OLChip("#travel", style: .token, dot: ListAccent.blue.color)
             }
             OLProgressBar(value: 0.44)
-            OLProgressBar(value: 1 / 6, tint: OL.info)
+            OLProgressBar(value: 1 / 6, turnsGreenWhenFull: false)
         }
     }
 
@@ -177,7 +173,7 @@ struct ComponentGallery: View {
             HStack(spacing: 12) {
                 OLTile(icon: "🗻", fill: OL.sunken)
                 OLTile(icon: "🗻", size: 60, raised: true)
-                OLTile(icon: "tray", accent: OL.info, fill: OL.sunken)
+                OLTile(icon: "tray", fill: OL.sunken)
                 OLCheckbox(.open, size: 28) {}
                 OLCheckbox(.done, size: 28) {}
             }

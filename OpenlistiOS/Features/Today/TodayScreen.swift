@@ -77,13 +77,13 @@ private struct TodayPage: View {
                 }
                 taskGroup("Overdue", symbol: "exclamationmark.circle.fill", color: OL.danger,
                           tasks: agenda.overdue, slots: slots, nowID: work.task?.id)
-                taskGroup("Due today", symbol: "sun.max.fill", color: OL.today,
+                taskGroup("Due today", symbol: "sun.max.fill", color: OL.ink,
                           tasks: agenda.due, slots: slots, nowID: work.task?.id)
                 taskGroup("Planned", symbol: "calendar", color: OL.ink,
                           tasks: agenda.planned, slots: slots, nowID: work.task?.id)
                 taskGroup("Tonight", symbol: "moon.fill", color: OL.ink,
                           tasks: agenda.tonight, slots: slots, nowID: work.task?.id)
-                taskGroup("Starred", symbol: "star.fill", color: OL.today,
+                taskGroup("Starred", symbol: "star.fill", color: OL.star,
                           tasks: agenda.starred, slots: slots, nowID: work.task?.id)
                 if !agenda.doneToday.isEmpty {
                     OLLinkRow("Completed today", count: agenda.doneToday.count) { navigator.open(.activity) }

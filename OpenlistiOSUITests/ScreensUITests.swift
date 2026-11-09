@@ -676,7 +676,8 @@ final class ScreensUITests: XCTestCase {
         let haptics = app.switches["settings.haptics"]
         XCTAssertEqual(haptics.value as? String, "1")
         haptics.tap()
-        XCTAssertEqual(app.switches["settings.haptics"].value as? String, "0")
+        let off = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == '0'"), object: app.switches["settings.haptics"])
+        XCTAssertEqual(XCTWaiter().wait(for: [off], timeout: 5), .completed, "Haptics turns off")
         app.buttons["Trash"].tap()
         app.waitForScreen("screen.trash")
         XCTAssertTrue(app.staticTexts["3 items · hold × to erase one for good"].exists)

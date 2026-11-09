@@ -30,7 +30,7 @@ struct TaskSwipeSettingsSection: View {
                 }
             }
         } label: {
-            OLSettingsRow(slot.title, tile: .accent(action.symbol), separator: slot == .first ? .none : .settings) {
+            OLSettingsRow(slot.title, tile: .symbol(action.symbol), separator: slot == .first ? .none : .settings) {
                 OLRowValue(action.title)
             }
             .contentShape(.rect)

@@ -27,11 +27,14 @@ struct OLChip: View {
     var style: Style = .plain
     var small = false
     /// The text's colour when not `on`: a parsed date in `accentText`, a
-    /// label in `teal`.
+    /// priority in `danger`.
     var tint: Color?
+    /// A label's own colour, drawn as a dot before its name: the one colour
+    /// a label shows.
+    var dot: Color?
 
     init(_ label: String, symbol: String? = nil, icon: OLIcon? = nil, glyph: String? = nil, style: Style = .plain,
-         small: Bool = false, tint: Color? = nil) {
+         small: Bool = false, tint: Color? = nil, dot: Color? = nil) {
         self.label = label
         self.symbol = symbol
         self.icon = icon
@@ -39,10 +42,12 @@ struct OLChip: View {
         self.style = style
         self.small = small
         self.tint = tint
+        self.dot = dot
     }
 
     var body: some View {
         HStack(spacing: 6) {
+            if let dot { OLLabelDot(color: dot) }
             if let glyph { Text(glyph).font(.system(size: small ? 14 : 17)) }
             if let icon { OLIconView(icon: icon, size: small ? 16 : 18) }
             else if let symbol { Image(systemName: symbol).font(.system(size: small ? 14 : 17, weight: .medium)) }
@@ -102,6 +107,37 @@ struct OLChipButton: View {
         .buttonStyle(OLPressStyle(scale: 0.96))
         .padding(.vertical, -slack)
         .olFeedback(.selection, trigger: chip.style == .on)
+    }
+}
+
+// MARK: - Labels
+
+/// A label's own colour as a dot, the only colour a label shows: before its
+/// name in a chip, a row or a field, which stay grey, as on the Mac.
+struct OLLabelDot: View {
+    let color: Color
+    var size: CGFloat = 7
+
+    var body: some View {
+        Circle().fill(color).frame(width: size, height: size).accessibilityHidden(true)
+    }
+}
+
+extension Text {
+    /// A label inside a line of text: its dot, then its name, so it wraps
+    /// with the words around it. Give the line a plain accessibility label;
+    /// the dot is a symbol VoiceOver would name.
+    static func olLabel(_ name: String, color: Color) -> Text {
+        let dot = Text(Image(systemName: "circle.fill")).font(.system(size: 7)).baselineOffset(1.5).foregroundStyle(color)
+        return Text("\(dot) \(name)")
+    }
+
+    /// Labels as one line of text, each a dot and a name, a few spaces apart.
+    static func olLabels(_ labels: [(name: String, color: Color)]) -> Text {
+        labels.enumerated().reduce(Text(verbatim: "")) { line, item in
+            let label = olLabel(item.element.name, color: item.element.color)
+            return item.offset == 0 ? label : Text("\(line)   \(label)")
+        }
     }
 }
 
@@ -222,8 +258,9 @@ struct OLSegmented<Value: Hashable>: View {
 // MARK: - C14 Toggle
 
 extension View {
-    /// The design's switch is the system's, on in `success`.
-    func olToggle() -> some View { tint(OL.success) }
+    /// The design's switch is the system's, on in `controlTint`, the Mac's
+    /// switch grey: an on-state isn't a status, so it isn't green.
+    func olToggle() -> some View { tint(OL.controlTint) }
 }
 
 // MARK: - View picker

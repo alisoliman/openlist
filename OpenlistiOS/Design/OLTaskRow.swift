@@ -127,7 +127,7 @@ struct OLTrailing: Equatable {
         case due
         /// Late: `danger`.
         case late
-        /// A star: `today`.
+        /// A star: `star`, the one orange.
         case star
         /// When a task was done, on an earlier day: `successText`.
         case done
@@ -195,7 +195,7 @@ struct OLTrailingView: View {
         case .muted: OL.muted
         case .due: OL.accentText
         case .late: OL.danger
-        case .star: OL.today
+        case .star: OL.star
         case .done: OL.successText
         }
     }

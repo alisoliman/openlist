@@ -7,15 +7,15 @@ import SwiftUI
 
 // MARK: - C25 List cards
 
-/// A list on Lists (`.lcard`): its tint band with the glyph, then its name
-/// and "7 open". Names use two lines normally and wrap at accessibility sizes.
+/// A list on Lists (`.lcard`): a grey band with its glyph, in the list's
+/// colour when it's a symbol, then its name and "7 open". Names use two
+/// lines normally and wrap at accessibility sizes.
 struct OLListCard: View {
     let title: String
     let icon: String
     var accent: ListAccent = .graphite
     /// "7 open"; nil draws nothing.
     var detail: String?
-    var isInbox = false
     let action: () -> Void
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
@@ -30,7 +30,7 @@ struct OLListCard: View {
                 .padding(.bottom, 6)
                 .frame(height: 56, alignment: .bottom)
                 .frame(maxWidth: .infinity)
-                .background(isInbox ? OL.Tint.blue.color : OL.tint(for: accent).color)
+                .background(OL.band)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
                         .font(OLFont.rowTitleStrong)
@@ -101,22 +101,21 @@ struct OLListGrid<Content: View>: View {
 
 // MARK: - C26 List page header
 
-/// The top of a list's page: its tint in a band from the screen's top edge
-/// to 38 pt under the top bar, and its glyph on a 60 pt tile overlapping the
-/// band's edge by 30. The page's top bar goes inside (`topBar`).
+/// The top of a list's page: a grey band from the screen's top edge to 38 pt
+/// under the top bar, and its glyph on a 60 pt tile overlapping the band's
+/// edge by 30. The list's colour is its glyph's, not the band's. The page's
+/// top bar goes inside (`topBar`).
 struct OLListHeaderBand<TopBar: View>: View {
     let icon: String
     var accent: ListAccent = .graphite
-    var isInbox = false
     /// Makes the tile a button, which opens the list's Icon & colour.
     var editAppearance: (() -> Void)?
     @ViewBuilder var topBar: TopBar
 
-    init(icon: String, accent: ListAccent = .graphite, isInbox: Bool = false, editAppearance: (() -> Void)? = nil,
+    init(icon: String, accent: ListAccent = .graphite, editAppearance: (() -> Void)? = nil,
          @ViewBuilder topBar: () -> TopBar) {
         self.icon = icon
         self.accent = accent
-        self.isInbox = isInbox
         self.editAppearance = editAppearance
         self.topBar = topBar()
     }
@@ -138,7 +137,7 @@ struct OLListHeaderBand<TopBar: View>: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(alignment: .top) {
             // Far above the top, so the band also fills the status bar and a pull down.
-            (isInbox ? OL.Tint.blue.color : OL.tint(for: accent).color)
+            OL.band
                 .frame(height: 44 + 38 + 800)
                 .offset(y: -800)
                 .padding(.horizontal, -OLMetrics.gutter)
@@ -158,7 +157,7 @@ struct OLNowCard: View {
         case planned
         /// Recording: the button opens Working.
         case working
-        /// Paused: "Paused" in the Today colour, the button resumes.
+        /// Paused: "Paused" in grey, the button resumes.
         case paused
     }
 
@@ -187,7 +186,7 @@ struct OLNowCard: View {
                     VStack(alignment: .leading, spacing: 0) {
                         Text(state == .paused ? "Paused" : eyebrow)
                             .font(OLFont.meta.weight(.semibold))
-                            .foregroundStyle(state == .paused ? OL.todayText : OL.accentText)
+                            .foregroundStyle(state == .paused ? OL.muted : OL.accentText)
                         Text(title)
                             .font(OLFont.rowTitleStrong)
                             .foregroundStyle(OL.ink)
@@ -240,11 +239,12 @@ struct OLLoadingState: View {
 }
 
 /// A screen with nothing to show (`Today is clear`): a 56 pt disc with the
-/// screen's glyph, a serif title, a line of text and an action. A
+/// screen's glyph, grey unless it means something (a list's colour, a done
+/// tick's green), a serif title, a line of text and an action. A
 /// `checkmark` is the design's own tick, 24 pt at a 2.4 stroke.
 struct OLEmptyState: View {
     let symbol: String
-    var tint: Color = OL.today
+    var tint: Color = OL.muted
     /// A flat disc in this colour, as Triage's finished tick, instead of the
     /// raised surface one.
     var fill: Color?
