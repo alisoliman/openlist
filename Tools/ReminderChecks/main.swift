@@ -35,6 +35,29 @@ check(recovery.authorizationError != nil && recovery.statuses[first.id] == .deni
 client.permissionFailure = false
 _ = await recovery.requestPermission(); await recovery.waitUntilIdle()
 check(recovery.authorizationError == nil && recovery.statuses[first.id] == .accepted, "Permission recovery reschedules future intent")
+
+// A changed committed snapshot while the system prompt is open must win when
+// authorization returns, and a second request must not show a second prompt.
+let promptClient = FakeReminderClient()
+promptClient.permission = .notDetermined
+let promptRecovery = ReminderRecovery(client: promptClient, now: { clock })
+let beforePrompt = intent()
+promptRecovery.reconcile([beforePrompt]); await promptRecovery.waitUntilIdle()
+promptClient.holdPermissionRequest = true
+let permissionTask = Task { await promptRecovery.requestPermission() }
+await settleUntil { promptClient.permissionRequestContinuation != nil }
+let duringPrompt = intent(beforePrompt.id, date: clock.addingTimeInterval(7200), title: "Changed during prompt")
+promptRecovery.reconcile([duringPrompt])
+let secondPermissionTask = Task { await promptRecovery.requestPermission() }
+await Task.yield()
+check(promptClient.permissionRequests == 1 && promptClient.adds.isEmpty,
+      "Concurrent permission requests do not start another prompt or add while it is open")
+promptClient.releasePermissionRequest()
+_ = await permissionTask.value
+let secondPromptResult = await secondPermissionTask.value
+await promptRecovery.waitUntilIdle()
+check(secondPromptResult && promptClient.permissionRequests == 1 && promptClient.requests[duringPrompt.id] == duringPrompt && promptRecovery.statuses[duringPrompt.id] == .accepted,
+      "Concurrent callers receive permission and completion reconciles the latest committed reminder")
 let second = intent()
 client.addFailures = 1
 recovery.reconcile([first, second]); await recovery.waitUntilIdle()

@@ -8,6 +8,7 @@ import Foundation
 import Observation
 import SwiftData
 import SwiftUI
+import UserNotifications
 
 /// A picker inside the inspector that a keyboard shortcut can summon.
 enum DetailPicker: String, Identifiable {
@@ -117,6 +118,23 @@ final class AppEnvironment {
         assert(WidgetLink.scheme == LocalLink.scheme, "Widget links and item links share the app's URL scheme")
 
         calendar.onNudgesChanged = { [weak calendarNotifications] in calendarNotifications?.update() }
+        workbench.onScheduleReminders = { [weak store] ids in
+            // Quick Add is a nonactivating panel, but still accepts keyboard
+            // input while its key window is open over another app.
+            guard (NSApp.isActive || NSApp.keyWindow?.isKeyWindow == true),
+                  let store, store.persistenceError == nil else { return }
+            let recovery = NotificationService.shared.reminders
+            guard recovery.libraryReadError == nil,
+                  ids.contains(where: { id in
+                      guard let task = store.block(id: id),
+                            let intent = recovery.intents[id], intent.isEligible(at: .now) else { return false }
+                      return intent.date == (task.reminderAt ?? (task.includesTime ? task.dueDate : nil))
+                  }) else { return }
+            Task {
+                guard await NotificationService.shared.authorizationStatus() == .notDetermined else { return }
+                _ = await NotificationService.shared.requestAuthorization()
+            }
+        }
         // The plan and the running session change without a save. Debounced,
         // because one Start or Pause reports several times on its way through.
         calendar.onWidgetStateChange = { [weak widgetPublisher] in widgetPublisher?.scheduleRefresh() }
