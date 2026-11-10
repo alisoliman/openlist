@@ -38,6 +38,8 @@ final class PhoneActions {
     /// Runs after any Undo, so screens on what it took away (a list just
     /// made, say) move on. The environment repairs the navigator here.
     @ObservationIgnored var afterUndo: (() -> Void)?
+    /// Ask for permission only in response to a user saving a future reminder.
+    @ObservationIgnored var onFutureReminderSaved: (() -> Void)?
 
     /// Tasks ticked and dwelling: drawn done where they are until written.
     private(set) var closing: Set<UUID> = []
@@ -553,6 +555,7 @@ final class PhoneActions {
         changes.endUndoGrouping()
         guard report(blocks.count == 1 ? "Added to \(place)" : "Added \(blocks.count) tasks to \(place)",
                      icon: "plus.circle", tone: .accent, changes: changes) else { return }
+        requestReminderPermissionIfNeeded(for: blocks)
         haptics.play(.success)
     }
 
@@ -776,6 +779,7 @@ final class PhoneActions {
         let text = label ?? date.map { "\(what) due \(CompactText.day($0, now: now, calendar: calendar).lowercasedDay)" }
             ?? "Cleared the date of \(what)"
         edit(open, text, icon: "calendar") { task in setDue(date, includesTime: includesTime, for: task) }
+        if store.persistenceError == nil { requestReminderPermissionIfNeeded(for: open) }
     }
 
     /// Dates tasks tonight (`Tonight.time`): "“X” due tonight" with Undo.
@@ -825,11 +829,13 @@ final class PhoneActions {
         guard !unchanged else { return true }
         NotificationCenter.default.post(name: .commitPendingEditorDrafts, object: nil)
         let text = "Edited “\(snapshot.title.isEmpty ? task.displayTitle : snapshot.title)”"
-        return perform(text, icon: "pencil", tone: .accent) { [store] changes in
+        let succeeded = perform(text, icon: "pencil", tone: .accent) { [store] changes in
             store.undoableEditorEdit(in: listID, name: text, undoManager: changes, includingNewLabels: true) {
                 store.applyCapture(snapshot, to: task)
             }
         } failure: { "“\(task.displayTitle)” couldn’t be changed." }
+        if succeeded, store.persistenceError == nil { requestReminderPermissionIfNeeded(for: [task]) }
+        return succeeded
     }
 
     /// Files a task from triage in one step: into `list` and due `date`,
@@ -849,7 +855,7 @@ final class PhoneActions {
             "“\(task.displayTitle)” \(day ?? "")"
         }
         var failure = "“\(task.displayTitle)” could not be filed."
-        return perform(text, icon: moves ? "arrow.right.circle" : "calendar", tone: .accent) { [store] changes in
+        let succeeded = perform(text, icon: moves ? "arrow.right.circle" : "calendar", tone: .accent) { [store] changes in
             if moves, let list {
                 do {
                     guard try !store.moveSelection([task.id], to: list.id, undoManager: changes).isEmpty else { return false }
@@ -865,6 +871,15 @@ final class PhoneActions {
             }
             return true
         } failure: { failure }
+        if succeeded, date != nil, store.persistenceError == nil { requestReminderPermissionIfNeeded(for: [task]) }
+        return succeeded
+    }
+
+    private func requestReminderPermissionIfNeeded(for tasks: [Block]) {
+        let recovery = NotificationService.shared.reminders
+        guard recovery.hasSnapshot, recovery.libraryReadError == nil,
+              tasks.contains(where: { recovery.intents[$0.id]?.isEligible(at: clock.now) == true }) else { return }
+        onFutureReminderSaved?()
     }
 
     /// Offers an action's undo to shake-to-undo as well, under its tray text.

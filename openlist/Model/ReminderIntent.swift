@@ -1,6 +1,6 @@
 import Foundation
 
-/// Saved reminder intent is portable. Scheduling results belong to this Mac.
+/// Saved reminder intent is portable. Scheduling results belong to this device.
 nonisolated struct ReminderIntent: Codable, Equatable, Sendable, Identifiable {
     let id: UUID
     let occurrenceID: UUID
@@ -64,7 +64,7 @@ nonisolated enum ReminderAuthorization: Equatable, Sendable {
         case .unknown: "Checking…"
         case .notDetermined: "Permission needed"
         case .denied: "Turned off in System Settings"
-        case .authorized: "Allowed by macOS"
+        case .authorized: "Allowed"
         case .unavailable: "Disabled in this review build"
         }
     }

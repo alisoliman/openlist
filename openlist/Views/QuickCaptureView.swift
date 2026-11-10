@@ -164,6 +164,7 @@ extension QuickCaptureDraft {
             workbench.separateUndoStep(using: manager)
             manager.beginUndoGrouping()
             workbench.didAddSpoken(blocks, opened: headings, showsTray: false, using: manager)
+            workbench.onScheduleReminders?(blocks.map(\.id))
             manager.endUndoGrouping()
             captureUndoManager = manager
             undoWorkbench = workbench
@@ -187,6 +188,7 @@ extension QuickCaptureDraft {
         // The main window takes the task in as it does its own captures,
         // Undo and Changes included, folding again what the capture opened.
         workbench.didQuickAdd(block, opened: opened)
+        workbench.onScheduleReminders?([block.id])
         let added = "Added to \(store.list(id: block.listID)?.displayTitle ?? "Inbox")"
         if !keepOpen {
             AccessibilityNotification.Announcement(added).post()

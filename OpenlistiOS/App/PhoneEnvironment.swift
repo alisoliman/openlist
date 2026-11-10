@@ -7,6 +7,7 @@ import Foundation
 import Observation
 import SwiftData
 import SwiftUI
+import UserNotifications
 
 /// The iPhone's composition root: the Store and everything that keeps it,
 /// the widgets, reminders and sync in step, created once at launch.
@@ -185,6 +186,13 @@ final class PhoneEnvironment {
             self?.tray.show(message, icon: "link", tone: .danger, seconds: 6)
         }
         if platform.installsProcessHooks {
+            actions.onFutureReminderSaved = { [weak self] in
+                guard let self, self.platform.isAppActive() else { return }
+                Task {
+                    guard await NotificationService.shared.authorizationStatus() == .notDetermined else { return }
+                    _ = await NotificationService.shared.requestAuthorization()
+                }
+            }
             installNotificationDelegate()
             installWidgetActions()
             liveActivity = PhoneLiveActivity { [weak self] in self }

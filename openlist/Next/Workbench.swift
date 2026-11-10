@@ -397,6 +397,8 @@ final class Workbench {
     @ObservationIgnored private var shownRoute: AppRoute?
     /// The route `visibleIDs` was published on.
     @ObservationIgnored private var visibleRoute: AppRoute?
+    /// Called after a user schedules tasks, once their changes have been saved.
+    @ObservationIgnored var onScheduleReminders: (([UUID]) -> Void)?
 
     init(store: Store, navigator: Navigator, settings: AppSettings, calendar: CalendarCoordinator,
          defaults: UserDefaults? = nil, restoresSidebar: Bool = false) {

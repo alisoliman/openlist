@@ -14,6 +14,9 @@ final class FakeReminderClient: ReminderNotificationClient {
     var addContinuation: CheckedContinuation<Void, Never>?
     var holdAuthorization = false
     var authorizationContinuation: CheckedContinuation<Void, Never>?
+    var holdPermissionRequest = false
+    var permissionRequestContinuation: CheckedContinuation<Void, Never>?
+    var permissionRequests = 0
     func authorization() async throws -> ReminderAuthorization {
         let captured = permission
         if holdAuthorization {
@@ -24,6 +27,11 @@ final class FakeReminderClient: ReminderNotificationClient {
         return captured
     }
     func requestAuthorization() async throws -> Bool {
+        permissionRequests += 1
+        if holdPermissionRequest {
+            holdPermissionRequest = false
+            await withCheckedContinuation { permissionRequestContinuation = $0 }
+        }
         if permissionFailure { throw CocoaError(.featureUnsupported) }
         permission = .authorized
         return true
@@ -50,4 +58,5 @@ final class FakeReminderClient: ReminderNotificationClient {
     }
     func releaseAdd() { addContinuation?.resume(); addContinuation = nil }
     func releaseAuthorization() { authorizationContinuation?.resume(); authorizationContinuation = nil }
+    func releasePermissionRequest() { permissionRequestContinuation?.resume(); permissionRequestContinuation = nil }
 }
