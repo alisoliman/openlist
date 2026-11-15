@@ -20,8 +20,8 @@ struct TaskSwipeTests {
         #expect(task.dueDate == future)
 
         let snapshot = CaptureDueDate.chosen(future, includesTime: true)
-            .snapshot(CaptureParse("Call home", reference: phone.env.now), dueToday: false,
-                      now: phone.env.now, calendar: phone.env.settings.calendar)
+            .snapshot(CaptureParse("Call home", reference: phone.env.now), defaultDay: nil,
+                      calendar: phone.env.settings.calendar)
         let captured = try phone.store.saveCapture(snapshot, destinationID: nil)
         phone.env.actions.reportCapture(captured)
         #expect(offers == 2)
