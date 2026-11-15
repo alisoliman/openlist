@@ -266,6 +266,7 @@ final class PhoneEnvironment {
             let seeded = PhoneFixture.seed(into: store, settings: settings, now: clock.now)
             #if DEBUG
             ListDocumentFixture.seedIfRequested(into: store, reviewSession: ReviewSession.identifier)
+            PhoneFixture.seedInboxHierarchyIfRequested(into: store)
             #endif
             if store.persistenceError == nil {
                 settings.hasSeededSampleData = true

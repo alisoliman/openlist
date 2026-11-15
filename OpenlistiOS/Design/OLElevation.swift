@@ -5,12 +5,14 @@
 
 import SwiftUI
 
-/// The design's three shadows and the dark theme's card ring. A CSS blur is
+/// The design's shadows and the dark theme's card ring. A CSS blur is
 /// about twice a SwiftUI radius; shadows go on the background shape, never
 /// the content, so text doesn't cast one.
 enum OLShadow {
     /// `--shadow-card`.
     case card
+    /// Less elevation for a screen with several cards in a row.
+    case softCard
     /// `--shadow-float`: the dock, bulk bar and tray.
     case float
     /// `--shadow-fab`: the + and the primary work buttons.
@@ -46,8 +48,8 @@ extension View {
 
     /// A card (`.card`): the surface, radius 20, the card shadow, and in dark
     /// a 1 pt ring in `line`, with the content clipped to the shape.
-    func olCard(radius: CGFloat = 20, fill: Color = OL.surface) -> some View {
-        modifier(OLCardModifier(radius: radius, fill: fill))
+    func olCard(radius: CGFloat = 20, fill: Color = OL.surface, shadow: OLShadow = .card) -> some View {
+        modifier(OLCardModifier(radius: radius, fill: fill, shadow: shadow))
     }
 }
 
@@ -76,6 +78,10 @@ private struct OLShadowModifier: ViewModifier {
             content
                 .shadow(color: warm.opacity(0.05), radius: 1, y: 1)
                 .shadow(color: warm.opacity(0.06), radius: 9, y: 6)
+        case (.softCard, .dark):
+            content.shadow(color: .black.opacity(0.15), radius: 3, y: 1)
+        case (.softCard, _):
+            content.shadow(color: warm.opacity(0.045), radius: 5, y: 2)
         case (.float, .dark):
             content.shadow(color: .black.opacity(0.5), radius: 14, y: 8)
         case (.float, _):
@@ -91,13 +97,14 @@ private struct OLShadowModifier: ViewModifier {
 private struct OLCardModifier: ViewModifier {
     let radius: CGFloat
     let fill: Color
+    let shadow: OLShadow
     @Environment(\.colorScheme) private var scheme
 
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
         content
             .clipShape(shape)
-            .background { shape.fill(fill).olShadow(.card) }
+            .background { shape.fill(fill).olShadow(shadow) }
             .overlay {
                 if scheme == .dark { shape.strokeBorder(OL.line, lineWidth: 1) }
             }

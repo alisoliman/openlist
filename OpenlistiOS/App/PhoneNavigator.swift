@@ -27,7 +27,7 @@ final class PhoneNavigator {
     }
     /// The view Today just switched from, until the new one's toggle reads it.
     @ObservationIgnored private var switchedFrom: TodayMode?
-    /// The day the timeline shows; nil for today.
+    /// The day shared by Today's list and timeline. Nil follows the current day.
     var timelineDay: Date?
     var sheet: PhoneSheet? {
         didSet {
@@ -170,10 +170,13 @@ final class PhoneNavigator {
         return !dockHiders.isEmpty
     }
 
-    /// What the dock's + captures into: the list on show, else the Inbox.
+    /// Uses the open list's destination or the selected day in Today and Timeline.
     var captureRequest: CaptureRequest {
-        if case let .list(id) = topRoute { return CaptureRequest(listID: id) }
-        return CaptureRequest()
+        switch topRoute ?? tabRoot {
+        case let .list(id): CaptureRequest(listID: id)
+        case .today, .timeline: CaptureRequest(dueToday: true, dueDay: timelineDay)
+        default: CaptureRequest()
+        }
     }
 
     // MARK: Moving
@@ -199,11 +202,13 @@ final class PhoneNavigator {
     /// front (the Settings sheet's, when it's up), a tab route switches tab.
     func open(_ route: PhoneRoute) {
         switch route.presentation {
+        case .tab(.today):
+            timelineDay = nil
+            showTodayList()
         case let .tab(tab):
             dismissModals()
             self.tab = tab
             setPath([], for: tab)
-            if tab == .today { todayMode = .list; timelineDay = nil }
         case let .mode(tab):
             dismissModals()
             self.tab = tab
@@ -254,6 +259,22 @@ final class PhoneNavigator {
     func openTimeline(on day: Date?) {
         timelineDay = day
         open(.timeline)
+    }
+
+    /// Changes the presentation of the selected day without choosing a new one.
+    func showTodayList() {
+        dismissModals()
+        tab = .today
+        todayPath = []
+        todayMode = .list
+    }
+
+    func selectedDay(now: Date, calendar: Calendar) -> Date {
+        calendar.startOfDay(for: timelineDay ?? now)
+    }
+
+    func selectDay(_ day: Date, now: Date, calendar: Calendar) {
+        timelineDay = calendar.isDate(day, inSameDayAs: now) ? nil : calendar.startOfDay(for: day)
     }
 
     /// Lands on `route` from wherever the app was, as a link or notification
@@ -521,4 +542,10 @@ struct CaptureDraft: Codable, Equatable {
     var dueDate: CaptureDueDate = .automatic
     /// Optional, so a place saved before notes reads back as it was.
     var note: String?
+    /// A missing wrapper is from a draft saved before Capture kept its default.
+    var defaultDay: DefaultDay?
+
+    struct DefaultDay: Codable, Equatable {
+        let date: Date?
+    }
 }

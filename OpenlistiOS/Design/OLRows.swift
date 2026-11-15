@@ -38,13 +38,14 @@ struct OLTile: View {
     var size: CGFloat = 40
     var fill: Color = OL.surface
     var raised = false
+    var shadow: OLShadow = .card
 
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: size >= 60 ? 16 : 12, style: .continuous)
         OLListGlyph(icon: icon, accent: accent, size: size >= 60 ? 32 : 20)
             .frame(width: size, height: size)
             .background {
-                if raised { shape.fill(fill).olShadow(.card).olDarkRing(shape) } else { shape.fill(fill) }
+                if raised { shape.fill(fill).olShadow(shadow).olDarkRing(shape) } else { shape.fill(fill) }
             }
     }
 }

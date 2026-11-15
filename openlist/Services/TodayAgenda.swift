@@ -40,9 +40,8 @@ enum Tonight {
 }
 
 /// Today's tasks: overdue, due today, planned for today and starred, open or
-/// still in their completion dwell, and those done today. The rules read
-/// plain task fields, so the Mac's Today and the phone's show the same set
-/// and count; only the order they draw it in differs (`Order`).
+/// still in their completion dwell, and those done today. A nearby day shows
+/// its dated tasks, plan and completions without carrying other days forward.
 struct TodayAgenda {
     enum Order {
         /// Each group in the order its tasks came, the lists' outline order,
@@ -70,6 +69,8 @@ struct TodayAgenda {
     /// Overdue, due today, tonight and planned for today as one run, in the
     /// agenda's order: the phone's untitled card above Starred.
     private(set) var scheduled: [Block] = []
+    /// Only Today shows context from other days inside an eligible task's outline.
+    private let showsContextualSubtasks: Bool
 
     var openCount: Int { overdue.count + due.count + tonight.count + planned.count + starred.count }
     /// Done today out of everything Today holds, as the header's progress
@@ -89,12 +90,29 @@ struct TodayAgenda {
     ///     orders it by ahead of a timed due date today.
     init(tasks: [Block], closing: Set<UUID> = [], now: Date = .now, calendar: Calendar = .current,
          order: Order = .outline, isPlanned: ((Block) -> Bool)? = nil, time: (Block) -> Date? = { _ in nil }) {
-        let isPlanned = isPlanned ?? { $0.isPlanned(on: now, calendar: calendar) }
-        let today = calendar.startOfDay(for: now)
+        self.init(tasks: tasks, on: now, now: now, calendar: calendar, closing: closing,
+                  order: order, isPlanned: isPlanned, time: time)
+    }
+
+    /// On another day, a task belongs to its exact due day or plan day. A
+    /// slot on that day is also a plan, even if the task was never picked
+    /// for the day. `now` still decides whether this is the live Today view.
+    init(tasks: [Block], on selectedDay: Date, now: Date, calendar: Calendar = .current,
+         closing: Set<UUID> = [], order: Order = .outline, isPlanned: ((Block) -> Bool)? = nil,
+         time: (Block) -> Date? = { _ in nil }) {
+        let dayStart = calendar.startOfDay(for: selectedDay)
+        let isToday = calendar.isDate(now, inSameDayAs: dayStart)
+        showsContextualSubtasks = isToday
         func dayOffset(_ date: Date) -> Int {
-            calendar.dateComponents([.day], from: today, to: calendar.startOfDay(for: date)).day ?? 0
+            calendar.dateComponents([.day], from: dayStart, to: calendar.startOfDay(for: date)).day ?? 0
         }
         func offset(_ task: Block) -> Int? { task.dueDate.map(dayOffset) }
+        func plannedOnDay(_ task: Block) -> Bool {
+            if let isPlanned { return isPlanned(task) }
+            if isToday { return task.isPlanned(on: now, calendar: calendar) }
+            return task.selectedForDay.map { dayOffset($0) == 0 } == true
+                || time(task).map { dayOffset($0) == 0 } == true
+        }
         // One pass, each task's day worked out once: this runs over every
         // task on each of Today's redraws and clock ticks.
         for task in tasks {
@@ -104,7 +122,7 @@ struct TodayAgenda {
                 guard closing.contains(task.id) else { continue }
             }
             let day = offset(task)
-            if let day, day < 0 { overdue.append(task) }
+            if isToday, let day, day < 0 { overdue.append(task) }
             if day == 0, let date = task.dueDate {
                 if Tonight.contains(date, includesTime: task.includesTime, calendar: calendar) {
                     tonight.append(task)
@@ -112,8 +130,8 @@ struct TodayAgenda {
                     due.append(task)
                 }
             }
-            if (day ?? 1) > 0 {
-                if isPlanned(task) { planned.append(task) } else if task.isStarred { starred.append(task) }
+            if isToday ? (day ?? 1) > 0 : day != 0 {
+                if plannedOnDay(task) { planned.append(task) } else if isToday && task.isStarred { starred.append(task) }
             }
         }
         doneToday.sort(by: Block.byCompletionDate)
@@ -144,6 +162,17 @@ struct TodayAgenda {
         starred.sort(by: byTime)
         scheduled = overdue + (due + tonight + planned).sorted(by: byTime)
     }
+
+    /// Saved completions other than those already represented by a live done
+    /// task, including past occurrences of tasks that repeated and advanced.
+    /// The supplied Activity day has already applied Undo and reopen history.
+    func additionalCompletions(in day: ActivityHeatmapDay?) -> [ActivityCompletion] {
+        let live = Dictionary(doneToday.map { ($0.id, $0.occurrenceID) }, uniquingKeysWith: { first, _ in first })
+        return (day?.completions ?? []).reversed().filter { entry in
+            guard let taskID = entry.taskID, let occurrence = live[taskID] else { return true }
+            return entry.occurrenceID.map { $0 != occurrence } ?? false
+        }
+    }
 }
 
 /// Today's display rows. Each eligible root carries its task outline;
@@ -167,7 +196,11 @@ extension TodayAgenda {
     /// whole documents flattened without respecting collapse. Missing or
     /// disconnected tasks should be appended by the caller at depth zero.
     /// Today draws these outlines expanded without changing stored folds.
-    func nestedRows(in outline: [BlockRow]) -> TodayAgendaRows {
+    /// A task in a separate Now card can be skipped without hiding its children.
+    /// `separateCompleted` puts completions of the displayed day in their own
+    /// fold, while older checked children stay with an open Today parent.
+    func nestedRows(in outline: [BlockRow], excluding openRowID: UUID? = nil,
+                    separateCompleted: Bool = false) -> TodayAgendaRows {
         let positions = Dictionary(outline.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { first, _ in first })
         var ends = Array(repeating: outline.count, count: outline.count)
         var path: [Int] = []
@@ -191,15 +224,25 @@ extension TodayAgenda {
             return result
         }
 
-        let openIDs = Set((overdue + due + tonight + planned + starred).map(\.id))
+        var openIDs = Set((overdue + due + tonight + planned + starred).map(\.id))
+        if let openRowID { openIDs.remove(openRowID) }
         let openRoots = roots(in: openIDs)
+        // Keep anything still in its completion dwell in the open branch.
+        let separated = separateCompleted ? Set(doneToday.map(\.id)).subtracting(openIDs) : []
         var drawn: Set<UUID> = []
         func expanding(_ tasks: [Block]) -> [BlockRow] {
             var rows: [BlockRow] = []
             for task in tasks where openRoots.contains(task.id) {
                 guard let start = positions[task.id] else { continue }
-                for var row in outline[start..<ends[start]] where drawn.insert(row.id).inserted {
-                    row.depth -= outline[start].depth
+                var visibleDepths: [Int] = []
+                for var row in outline[start..<ends[start]] {
+                    while let depth = visibleDepths.last, depth >= row.depth { visibleDepths.removeLast() }
+                    guard row.id != openRowID, !separated.contains(row.id),
+                          showsContextualSubtasks || openIDs.contains(row.id) else { continue }
+                    guard drawn.insert(row.id).inserted else { continue }
+                    let depth = row.depth
+                    row.depth = visibleDepths.count
+                    visibleDepths.append(depth)
                     row.isCollapsed = false
                     rows.append(row)
                 }

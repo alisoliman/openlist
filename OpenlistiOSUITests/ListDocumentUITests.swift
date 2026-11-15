@@ -71,6 +71,46 @@ final class ListDocumentUITests: XCTestCase {
     }
 
     @MainActor
+    func testReturnAddsTasksToTheSameSection() {
+        let app = XCUIApplication.reviewSession(environment: [
+            "OpenlistDocumentFixture": "1",
+            "OpenlistOpenRoute": "list:Document review",
+        ])
+        app.launch()
+        app.waitForScreen("screen.list", timeout: 30)
+
+        let heading = app.buttons["Before we go"]
+        let addTask = app.buttons["Add task under Before we go"]
+        reveal(addTask, in: app)
+        addTask.tap()
+
+        let field = app.textFields["list.inlineTaskField"]
+        XCTAssertTrue(field.waitForExistence(timeout: 5))
+        app.type("Check airport transfers\n", into: field)
+        app.type("Print the itinerary\n", into: field)
+        XCTAssertTrue(field.exists, "Return keeps the entry field available")
+        snapshot(app, "list-inline-entry")
+
+        app.terminate()
+        app.launch()
+        app.waitForScreen("screen.list", timeout: 30)
+
+        let firstTask = app.buttons["Check airport transfers"]
+        let secondTask = app.buttons["Print the itinerary"]
+        reveal(firstTask, in: app)
+        reveal(secondTask, in: app)
+        XCTAssertLessThan(firstTask.frame.minY, secondTask.frame.minY)
+
+        reveal(heading, in: app)
+        heading.tap()
+        XCTAssertEqual(heading.value as? String, "Collapsed")
+        XCTAssertFalse(firstTask.exists)
+        XCTAssertFalse(secondTask.exists)
+        XCTAssertTrue(addTask.waitForNonExistence(timeout: 5))
+        reveal(app.buttons["Pick up the rail passes"], in: app)
+    }
+
+    @MainActor
     func testDocumentSectionsAndTaskFoldsInLightAppearance() {
         checkDocument(appearance: "light")
     }

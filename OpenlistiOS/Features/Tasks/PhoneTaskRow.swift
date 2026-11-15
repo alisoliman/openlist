@@ -25,10 +25,14 @@ struct PhoneTaskRow: View {
     var depth = 0
     var subtitle: String?
     var separator: OLSeparator = .none
-    /// Where the task sits on today's calendar, for Today's times.
+    /// Where the task sits on the day displayed by Today's agenda.
     var slot: Date?
+    var agendaDay: Date?
+    /// The parent may place a due-today subtask outside its original Today group.
+    var showsDueToday = false
     /// A starred task's subtasks, done and all, for Today's "1 of 3".
     var subtasks: (done: Int, total: Int)?
+    var emphasizesTitle = false
     /// Whether a done task says when it was done: in a fold, not where it
     /// was ticked among open ones.
     var showsCompletion = true
@@ -39,13 +43,15 @@ struct PhoneTaskRow: View {
         let actions = env.actions
         let closing = actions.isClosing(task.id)
         let trailing = task.isCompleted && !closing && !showsCompletion ? nil
-            : Self.trailing(for: task, closing: closing, context: context, slot: slot, subtasks: subtasks,
-                            now: env.now, calendar: env.settings.calendar)
+            : Self.trailing(for: task, closing: closing, context: context, slot: slot, agendaDay: agendaDay, subtasks: subtasks,
+                            showsDueToday: showsDueToday, now: env.now, calendar: env.settings.calendar)
+        let source = subtitle == nil || context == .today ? nil : library.list(task.listID)
         OLTaskRow(title: task.displayTitle,
                   state: Self.check(for: task, closing: closing, now: env.now, calendar: env.settings.calendar),
                   depth: depth, subtitle: subtitle,
-                  subtitleIcon: subtitle == nil ? nil : library.list(task.listID)?.icon,
-                  subtitleAccent: library.list(task.listID)?.accent.color ?? OL.muted,
+                  subtitleIcon: source?.icon,
+                  subtitleAccent: source?.accent.color ?? OL.muted,
+                  emphasizesTitle: emphasizesTitle || context == .today,
                   trailing: trailing,
                   separator: separator,
                   onToggle: { actions.toggle(task) },
@@ -71,21 +77,35 @@ struct PhoneTaskRow: View {
     }
 
     static func trailing(for task: Block, closing: Bool = false, context: PhoneRowContext, slot: Date? = nil,
-                         subtasks: (done: Int, total: Int)? = nil, now: Date, calendar: Calendar) -> OLTrailing? {
+                         agendaDay: Date? = nil, subtasks: (done: Int, total: Int)? = nil, showsDueToday: Bool = false,
+                         now: Date, calendar: Calendar) -> OLTrailing? {
+        let day = agendaDay ?? now
         if task.isCompleted && !closing {
             guard let done = task.completedAt else { return nil }
-            return CompactText.dayOffset(from: now, to: done, calendar: calendar) == 0
+            return calendar.isDate(done, inSameDayAs: day)
                 ? .text(CompactText.clock(done, calendar: calendar))
                 : .text(CompactText.day(done, now: now, calendar: calendar), tone: .done)
         }
         let repeats = context == .select ? nil : task.recurrence.map(RecurrenceWording.summary)
+        if context == .today, !calendar.isDate(day, inSameDayAs: now) {
+            if let due = task.dueDate, calendar.isDate(due, inSameDayAs: day) {
+                let text = task.includesTime ? "Due at \(CompactText.clock(due, calendar: calendar))"
+                    : "Due \(CompactText.day(due, now: now, calendar: calendar))"
+                let deadline = CompactText.Due(text: text, tone: .upcoming,
+                                               dayOffset: CompactText.dayOffset(from: now, to: due, calendar: calendar))
+                return .due(deadline, repeats: repeats)
+            }
+            if let slot, calendar.isDate(slot, inSameDayAs: day) {
+                return .text("Scheduled at \(CompactText.clock(slot, calendar: calendar))")
+            }
+        }
         if let due = CompactText.due(task.dueDate, includesTime: task.includesTime, now: now, calendar: calendar) {
             // Today says "Today" itself; a timed slot says more than the day.
             if context == .today, due.tone == .today {
                 if let slot, CompactText.dayOffset(from: now, to: slot, calendar: calendar) == 0 {
                     return .text(CompactText.clock(slot, calendar: calendar), tone: .due)
                 }
-                if !task.includesTime { return repeats.map { .repeats($0) } }
+                if !task.includesTime && !showsDueToday { return repeats.map { .repeats($0) } }
             }
             return .due(due, repeats: repeats)
         }

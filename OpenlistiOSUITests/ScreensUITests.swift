@@ -48,9 +48,72 @@ final class ScreensUITests: XCTestCase {
         }
         XCTAssertTrue(app.staticTexts["Today is clear"].waitForExistence(timeout: 15))
         snap(app, "today-clear")
-        app.buttons["Look at tomorrow"].tap()
-        app.waitForScreen("screen.timeline")
-        XCTAssertTrue(app.staticTexts["Tomorrow"].waitForExistence(timeout: 5))
+        let tomorrow = app.buttons["Look at tomorrow"]
+        revealTodayControl(tomorrow, in: app)
+        tomorrow.tap()
+        let today = app.waitForScreen("screen.today")
+        XCTAssertTrue(today.buttons[XCUIApplication.fixtureDay(24)].isSelected)
+    }
+
+    @MainActor
+    func testTodayAndTimelineShareTheSelectedDay() {
+        let app = launch()
+        let today = app.screen("screen.today")
+        let friday = XCUIApplication.fixtureDay(25)
+        let saturday = XCUIApplication.fixtureDay(26)
+        XCTAssertTrue(today.buttons[XCUIApplication.fixtureDay(23)].isSelected)
+        today.buttons[friday].tap()
+        let fridayTask = today.buttons["Prep board update slides"]
+        XCTAssertTrue(fridayTask.waitForExistence(timeout: 5))
+        XCTAssertTrue(today.buttons[friday].isSelected)
+        XCTAssertFalse(today.buttons["Order new water filters"].exists)
+        snap(app, "today-nearby-day")
+
+        today.buttons["today.timeline"].tap()
+        let timeline = app.waitForScreen("screen.timeline")
+        XCTAssertTrue(timeline.buttons[friday].isSelected)
+        timeline.buttons[saturday].tap()
+        timeline.buttons["timeline.list"].tap()
+
+        app.waitForScreen("screen.today")
+        XCTAssertTrue(today.buttons["Renew passports"].waitForExistence(timeout: 5))
+        XCTAssertTrue(today.buttons[saturday].isSelected)
+        XCTAssertFalse(fridayTask.exists)
+    }
+
+    @MainActor
+    func testTodayCompletedTasksExpandInline() {
+        let app = launch()
+        let today = app.screen("screen.today")
+        let fold = today.buttons["today.done"]
+        let standup = today.buttons["Standup notes"]
+        let reply = today.buttons["Reply to Kasuga about the tatami room"]
+        revealTodayControl(fold, in: app)
+        XCTAssertEqual(fold.value as? String, "Collapsed")
+        XCTAssertFalse(standup.exists)
+        XCTAssertFalse(reply.exists)
+
+        fold.tap()
+        XCTAssertEqual(fold.value as? String, "Expanded")
+        revealTodayControl(standup, in: app)
+        revealTodayControl(reply, in: app)
+        XCTAssertFalse(app.screen("screen.activity").exists)
+        snap(app, "today-completed-expanded")
+
+        revealTodayControl(fold, in: app)
+        fold.tap()
+        XCTAssertEqual(fold.value as? String, "Collapsed")
+        XCTAssertTrue(standup.waitForNonExistence(timeout: 5))
+        XCTAssertFalse(reply.exists)
+
+        let yesterday = today.buttons[XCUIApplication.fixtureDay(22)]
+        revealTodayControl(yesterday, in: app)
+        yesterday.tap()
+        revealTodayControl(fold, in: app)
+        XCTAssertEqual(fold.value as? String, "Collapsed")
+        fold.tap()
+        revealTodayControl(today.buttons["Compare Gion vs Arashiyama"], in: app)
+        XCTAssertFalse(standup.exists)
     }
 
     // MARK: Timeline
@@ -128,6 +191,43 @@ final class ScreensUITests: XCTestCase {
     }
 
     // MARK: Capture and Inbox
+
+    @MainActor
+    func testQuickAddUsesTodaysSelectedDayUnlessTheTitleNamesAnotherDay() {
+        let app = launch()
+        let today = app.screen("screen.today")
+        let friday = today.buttons[XCUIApplication.fixtureDay(25)]
+        friday.tap()
+        app.dock("capture").tap()
+        let capture = app.waitForScreen("screen.capture")
+        let due = capture.buttons["capture.dueDate"]
+        let field = capture.textFields["capture.field"]
+        XCTAssertEqual(due.value as? String, "Fri 25")
+
+        let fridayTitle = "Review the travel budget"
+        app.type("\(fridayTitle)\n", into: field)
+        XCTAssertTrue(app.screen("capture.added").waitForExistence(timeout: 5))
+        XCTAssertEqual(due.value as? String, "Fri 25", "Return keeps the selected day's default for the next task")
+
+        let thursdayTitle = "Send booking confirmation"
+        app.type("\(thursdayTitle) tomorrow", into: field)
+        XCTAssertEqual(due.value as? String, "Tomorrow")
+        capture.buttons["Add"].tap()
+        app.waitForScreenToClose("screen.capture")
+
+        XCTAssertTrue(friday.isSelected)
+        XCTAssertFalse(today.buttons[thursdayTitle].exists)
+        let fridayTask = today.buttons[fridayTitle]
+        revealTodayControl(fridayTask, in: app)
+        fridayTask.tap()
+        app.waitForScreen("screen.taskDetail")
+        XCTAssertTrue(app.buttons["detail.when"].label.contains("Fri 25"))
+
+        app.buttons["Back to Today"].tap()
+        app.waitForScreen("screen.today")
+        today.buttons[XCUIApplication.fixtureDay(24)].tap()
+        XCTAssertTrue(today.buttons[thursdayTitle].waitForExistence(timeout: 5))
+    }
 
     @MainActor
     func testCaptureTypesTokensAndAdds() throws {
@@ -615,8 +715,7 @@ final class ScreensUITests: XCTestCase {
     @MainActor
     func testActivityDays() {
         let app = launch()
-        app.buttons["today.done"].tap()
-        app.waitForScreen("screen.activity")
+        openActivityFromToday(in: app)
         XCTAssertTrue(app.staticTexts["6-day streak · 81 done in 12 weeks"].exists)
         XCTAssertTrue(app.element(beginningWith: "Started Draft Q3 OKRs").exists)
         // The work running at launch is this session's latest step, with Undo.
@@ -637,8 +736,7 @@ final class ScreensUITests: XCTestCase {
         tick.tap()
         // After the dwell, the completion is saved and listed.
         sleep(7)
-        app.buttons["today.done"].tap()
-        app.waitForScreen("screen.activity")
+        openActivityFromToday(in: app)
         XCTAssertTrue(app.element(beginningWith: "Completed Close out Q2 retro actions").waitForExistence(timeout: 5))
         snap(app, "activity-undo")
         app.buttons["activity.undo"].tap()
@@ -661,8 +759,7 @@ final class ScreensUITests: XCTestCase {
         app.waitForScreenToClose("screen.working")
         app.buttons["Back to Today"].tap()
         app.waitForScreen("screen.today")
-        app.buttons["today.done"].tap()
-        app.waitForScreen("screen.activity")
+        openActivityFromToday(in: app)
         XCTAssertTrue(app.element(beginningWith: "Started Write interview feedback for Priya").waitForExistence(timeout: 5))
         snap(app, "activity-started-undo")
         app.buttons["activity.undo"].tap()
@@ -725,6 +822,30 @@ final class ScreensUITests: XCTestCase {
         // The first launch after the simulator boots can be slow.
         if environment["OpenlistOpenRoute"] == nil { app.waitForScreen("screen.today", timeout: 45) }
         return app
+    }
+
+    @MainActor
+    private func openActivityFromToday(in app: XCUIApplication) {
+        let fold = app.buttons["today.done"]
+        revealTodayControl(fold, in: app)
+        if fold.value as? String == "Collapsed" { fold.tap() }
+        let activity = app.buttons["today.activity"]
+        revealTodayControl(activity, in: app)
+        activity.tap()
+        app.waitForScreen("screen.activity")
+    }
+
+    @MainActor
+    private func revealTodayControl(_ element: XCUIElement, in app: XCUIApplication) {
+        var viewport = app.frame
+        let dock = app.dock("capture")
+        viewport.size.height = dock.frame.minY - viewport.minY
+        for _ in 0..<6 {
+            let frame = element.exists ? element.frame : .zero
+            if !frame.isEmpty, viewport.contains(frame), element.isHittable { return }
+            if !frame.isEmpty && frame.minY < viewport.minY { app.swipeDown() } else { app.swipeUp() }
+        }
+        XCTFail("The Today control must be visible above the dock: \(element)")
     }
 
     /// The screen now, attached to the test and, with a folder given, saved.

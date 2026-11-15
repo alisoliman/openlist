@@ -5,6 +5,23 @@ import SwiftData
 /// task folds and completed-task rules, without mutating any stored blocks.
 @MainActor
 struct ListDocument {
+    enum Item: Identifiable {
+        enum ID: Hashable {
+            case block(UUID)
+            case taskEntry(UUID)
+        }
+
+        case block(BlockRow, previousTaskDepth: Int?)
+        case taskEntry(heading: Block)
+
+        var id: ID {
+            switch self {
+            case let .block(row, _): .block(row.id)
+            case let .taskEntry(heading): .taskEntry(heading.id)
+            }
+        }
+    }
+
     let page: ListPageRows
     let selectableTasks: [Block]
     private let sections: Set<UUID>
@@ -32,6 +49,25 @@ struct ListDocument {
 
     func canDisclose(_ row: BlockRow) -> Bool {
         row.block.isTask ? row.hasChildren : sections.contains(row.id)
+    }
+
+    /// Entry rows keep their heading's identity as new tasks push them down.
+    /// Finish each direct section before starting the next heading at any level.
+    func items(allowsTaskEntry: Bool) -> [Item] {
+        var items: [Item] = []
+        var heading: Block?
+        var previousTaskDepth: Int?
+        for row in page.rows {
+            if row.depth == 0, BlockTree.sectionLevel(of: row.block.kind) != nil {
+                if let heading { items.append(.taskEntry(heading: heading)) }
+                heading = allowsTaskEntry && row.block.parentID == nil && (!row.block.isCollapsed || !canDisclose(row))
+                    ? row.block : nil
+            }
+            items.append(.block(row, previousTaskDepth: previousTaskDepth))
+            previousTaskDepth = row.block.isTask ? row.depth : nil
+        }
+        if let heading { items.append(.taskEntry(heading: heading)) }
+        return items
     }
 
     /// Immediate child tasks, matching the count in Task detail. Prose does

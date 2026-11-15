@@ -30,25 +30,28 @@ enum PhoneTab: String, CaseIterable, Identifiable, Hashable, Codable {
     }
 }
 
-/// What the Capture sheet starts with: a list (the Inbox when nil), whether
-/// a task typed without a date is due today, and whether it starts listening
-/// for tasks to be said.
+/// What the Capture sheet starts with: a list (the Inbox when nil), a default
+/// due day for undated tasks, and whether to start listening for tasks.
 struct CaptureRequest: Hashable, Identifiable, Codable {
     var listID: UUID?
     var dueToday = false
+    var dueDay: Date?
     var listens = false
     /// Two requests for the same list are still two presentations.
     var id = UUID()
 
-    init(listID: UUID? = nil, dueToday: Bool = false, listens: Bool = false) {
+    init(listID: UUID? = nil, dueToday: Bool = false, dueDay: Date? = nil, listens: Bool = false) {
         self.listID = listID
         self.dueToday = dueToday
+        self.dueDay = dueDay
         self.listens = listens
     }
 
     init(_ request: QuickCaptureRequest) {
         self.init(listID: request.listID, dueToday: request.dueToday, listens: request.listens)
     }
+
+    func defaultDay(now: Date) -> Date? { dueDay ?? (dueToday ? now : nil) }
 }
 
 /// What triage deals: the Inbox, to file and date, or the tasks in the lists

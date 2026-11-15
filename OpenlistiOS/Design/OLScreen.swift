@@ -106,6 +106,11 @@ enum OLMetrics {
     /// A tray over a screen's own 56–64 pt bottom bar (Task detail's actions,
     /// Select's bulk bar, Triage's buttons): 12 pt above it.
     static let trayAboveScreenBar: CGFloat = 76
+
+    /// Extra indentation distinguishes deeper task branches while leaving room for titles.
+    static func taskIndent(_ depth: Int) -> CGFloat {
+        depth > 0 ? 36 + CGFloat(min(depth - 1, 2)) * 12 : 0
+    }
 }
 
 extension EnvironmentValues {
@@ -225,12 +230,14 @@ struct OLBackButton: View {
 struct OLHeader: View {
     let title: String
     var sub: String?
+    var subFont: Font
     /// Above the title, 4 pt; the list page uses 14 under its tile.
     var topSpacing: CGFloat = 4
 
-    init(_ title: String, sub: String? = nil, topSpacing: CGFloat = 4) {
+    init(_ title: String, sub: String? = nil, subFont: Font = OLFont.meta, topSpacing: CGFloat = 4) {
         self.title = title
         self.sub = sub
+        self.subFont = subFont
         self.topSpacing = topSpacing
     }
 
@@ -239,7 +246,7 @@ struct OLHeader: View {
             OLTitle(title)
             if let sub {
                 Text(sub)
-                    .font(OLFont.meta)
+                    .font(subFont)
                     .foregroundStyle(OL.muted)
                     .contentTransition(.numericText())
             }
@@ -406,13 +413,16 @@ struct OLLinkRow: View {
 struct OLFold<Content: View>: View {
     let title: String
     var count: Int?
+    var identifier: String?
     @Binding var isExpanded: Bool
     @ViewBuilder var content: Content
     @Environment(\.olStyle) private var style
 
-    init(_ title: String, count: Int? = nil, isExpanded: Binding<Bool>, @ViewBuilder content: () -> Content) {
+    init(_ title: String, count: Int? = nil, identifier: String? = nil, isExpanded: Binding<Bool>,
+         @ViewBuilder content: () -> Content) {
         self.title = title
         self.count = count
+        self.identifier = identifier
         _isExpanded = isExpanded
         self.content = content()
     }
@@ -439,6 +449,7 @@ struct OLFold<Content: View>: View {
             .buttonStyle(OLPressStyle())
             .accessibilityLabel(count.map { "\($0) \(title)" } ?? title)
             .accessibilityValue(isExpanded ? "Expanded" : "Collapsed")
+            .accessibilityIdentifier(identifier ?? "", isEnabled: identifier != nil)
             if isExpanded { content }
         }
         .padding(.top, 20)

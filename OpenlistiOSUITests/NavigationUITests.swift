@@ -34,10 +34,12 @@ final class NavigationUITests: XCTestCase {
         app.dock("capture").tap()
         app.waitForScreen("screen.capture")
         XCTAssertEqual(app.textFields["capture.field"].value as? String, "Call the plumber")
+        XCTAssertEqual(app.buttons["capture.dueDate"].value as? String, "None", "The saved Inbox draft stays undated")
         app.discardCapture()
         app.dock("capture").tap()
         app.waitForScreen("screen.capture")
         XCTAssertNotEqual(app.textFields["capture.field"].value as? String, "Call the plumber")
+        XCTAssertEqual(app.buttons["capture.dueDate"].value as? String, "Today")
     }
 
     /// Cancel with a draft asks; Keep for Later closes and the next Capture
