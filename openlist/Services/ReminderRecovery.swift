@@ -28,6 +28,7 @@ final class ReminderRecovery {
     @ObservationIgnored private var retryIDs = Set<UUID>()
     @ObservationIgnored private var task: Task<Void, Never>?
     @ObservationIgnored private var expiryTask: Task<Void, Never>?
+    @ObservationIgnored private var permissionWaiters: [CheckedContinuation<Bool, Never>] = []
 
     init(client: any ReminderNotificationClient, isSimulated: Bool = false, pendingLimit: Int? = nil,
          now: @escaping () -> Date = Date.init) {
@@ -94,7 +95,9 @@ final class ReminderRecovery {
 
     @discardableResult
     func requestPermission() async -> Bool {
-        guard !isRequestingAuthorization else { return false }
+        if isRequestingAuthorization {
+            return await withCheckedContinuation { permissionWaiters.append($0) }
+        }
         isRequestingAuthorization = true
         revision &+= 1
         var granted = false
@@ -106,6 +109,9 @@ final class ReminderRecovery {
         }
         isRequestingAuthorization = false
         refresh(retryFailures: true)
+        let waiters = permissionWaiters
+        permissionWaiters.removeAll()
+        for waiter in waiters { waiter.resume(returning: granted) }
         return granted
     }
 

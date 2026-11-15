@@ -4,6 +4,34 @@ import Testing
 
 @MainActor
 struct TaskSwipeTests {
+    @Test func futureTimedTasksOfferNotificationPermissionAfterSaving() throws {
+        let phone = try TestPhone(seeded: true)
+        let task = try #require(phone.task("Start Piranesi"))
+        var offers = 0
+        phone.env.actions.onFutureReminderSaved = { offers += 1 }
+        let future = phone.env.now.addingTimeInterval(86_400)
+
+        phone.env.actions.schedule([task], on: future, includesTime: false)
+        #expect(offers == 0)
+        phone.env.actions.schedule([task], on: phone.env.now.addingTimeInterval(-60), includesTime: true)
+        #expect(offers == 0)
+        phone.env.actions.schedule([task], on: future, includesTime: true)
+        #expect(offers == 1)
+        #expect(task.dueDate == future)
+
+        let snapshot = CaptureDueDate.chosen(future, includesTime: true)
+            .snapshot(CaptureParse("Call home", reference: phone.env.now), dueToday: false,
+                      now: phone.env.now, calendar: phone.env.settings.calendar)
+        let captured = try phone.store.saveCapture(snapshot, destinationID: nil)
+        phone.env.actions.reportCapture(captured)
+        #expect(offers == 2)
+
+        let reading = try #require(phone.list("Reading"))
+        phone.store.setArchived(true, for: reading)
+        phone.env.actions.schedule([task], on: future.addingTimeInterval(60), includesTime: true)
+        #expect(offers == 2, "An inactive task must not trigger a permission request")
+    }
+
     @Test func shortSwipesRevealControlsWithoutCommitting() {
         #expect(TaskSwipeMotion.result(translation: 37, width: 350) == .closed)
         #expect(TaskSwipeMotion.result(translation: 38, width: 350) == .shortcuts)

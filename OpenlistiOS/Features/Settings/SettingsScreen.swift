@@ -78,6 +78,7 @@ struct SettingsScreen: View {
                 .olCard()
             }
             TaskSwipeSettingsSection()
+            notificationSettings
             OLGroup("Motion") {
                 VStack(spacing: 0) {
                     OLSettingsRow("Reduce motion", tile: .icon(.wave)) {
@@ -170,6 +171,78 @@ struct SettingsScreen: View {
         } message: {
             Text(env.sync.state.isEnabled ? env.sync.state.detail
                  : env.sync.state.unavailableReason ?? "iCloud sync is off on this iPhone.")
+        }
+        .task {
+            env.store.refreshAllReminders()
+            NotificationService.shared.reminders.refresh()
+        }
+    }
+
+    private var notificationSettings: some View {
+        let recovery = NotificationService.shared.reminders
+        let pending = recovery.statuses.values.filter { $0 == .accepted }.count
+        let queued = recovery.statuses.values.filter { $0 == .queued }.count
+        let failed = recovery.statuses.values.filter {
+            if case .failed = $0 { return true }
+            return false
+        }.count
+        return OLGroup("Notifications") {
+            VStack(alignment: .leading, spacing: 0) {
+                Button {
+                    switch recovery.authorization {
+                    case .notDetermined:
+                        Task { _ = await NotificationService.shared.requestAuthorization() }
+                    case .denied, .authorized:
+                        if let url = URL(string: UIApplication.openNotificationSettingsURLString) {
+                            UIApplication.shared.open(url)
+                        }
+                    case .unknown, .unavailable: break
+                    }
+                } label: {
+                    OLSettingsRow("Notifications", tile: .symbol("bell")) {
+                        OLRowValue(notificationPermissionTitle, showsChevron: recovery.authorization != .unknown && recovery.authorization != .unavailable)
+                    }
+                    .contentShape(.rect)
+                }
+                .buttonStyle(OLRowPressStyle())
+                .disabled(recovery.isSimulated || recovery.isRequestingAuthorization || recovery.authorization == .unknown || recovery.authorization == .unavailable)
+                .accessibilityIdentifier("settings.notifications")
+                Button {
+                    env.store.refreshAllReminders()
+                    recovery.refresh(retryFailures: true)
+                } label: {
+                    OLSettingsRow("Reminders", tile: .symbol("clock"), separator: .settings) {
+                        OLRowValue(recovery.isRefreshing ? "Checking…" : "\(pending) pending", showsChevron: false)
+                    }
+                    .contentShape(.rect)
+                }
+                .buttonStyle(OLRowPressStyle())
+                .disabled(recovery.isRefreshing)
+                .accessibilityHint("Checks and retries future reminders")
+                .accessibilityIdentifier("settings.retryReminders")
+            }
+            .olCard()
+            if recovery.isSimulated || queued > 0 || failed > 0 || recovery.recoveryError != nil || recovery.libraryReadError != nil || recovery.authorizationError != nil {
+                Text(recovery.authorizationError ?? recovery.libraryReadError ?? recovery.recoveryError
+                     ?? (recovery.isSimulated ? "Review simulation only. No notifications are scheduled."
+                         : [failed > 0 ? "\(failed) couldn’t be scheduled." : nil,
+                            queued > 0 ? "\(queued) waiting for earlier reminders." : nil].compactMap { $0 }.joined(separator: " ")))
+                    .font(OLFont.meta)
+                    .foregroundStyle(OL.muted)
+                    .padding(.top, 8)
+            }
+        }
+    }
+
+    private var notificationPermissionTitle: String {
+        let recovery = NotificationService.shared.reminders
+        if recovery.isSimulated { return "Simulated" }
+        return switch recovery.authorization {
+        case .unknown: "Checking…"
+        case .notDetermined: "Allow"
+        case .denied: "Off"
+        case .authorized: "On"
+        case .unavailable: "Unavailable"
         }
     }
 

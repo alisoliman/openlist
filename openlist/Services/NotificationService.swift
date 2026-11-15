@@ -123,6 +123,9 @@ final class NotificationService {
         switch await authorizationStatus() {
         case .authorized, .provisional: return true
         case .notDetermined:
+            // A reminder may already have opened the system prompt. Wait for
+            // that answer so the current nudge is not discarded mid-prompt.
+            if reminders.isRequestingAuthorization { return await reminders.requestPermission() }
             guard !hasRequestedAuthorization else { return false }
             return await requestAuthorization()
         default: return false

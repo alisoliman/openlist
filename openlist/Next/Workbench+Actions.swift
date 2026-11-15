@@ -229,6 +229,7 @@ extension Workbench {
             let due = dueDate(for: task, offset: offset)
             store.setDueDate(due.date, includesTime: due.includesTime, for: task)
         }
+        if offset != nil { onScheduleReminders?(tasks.map(\.id)) }
         selection = []
     }
 
@@ -240,6 +241,7 @@ extension Workbench {
         edit(tasks, label: "\(describe(tasks)) → Tonight \(NXFormat.clock(time))", icon: "calendar", tone: .accent) { task in
             store.setDueDate(time, includesTime: true, for: task)
         }
+        onScheduleReminders?(tasks.map(\.id))
         selection = []
     }
 
@@ -341,6 +343,7 @@ extension Workbench {
             store.setDueDate(date, includesTime: includesTime, for: task)
             if let recurrence { store.setRecurrence(recurrence, for: task) }
         }
+        onScheduleReminders?([id])
     }
 
     func setReminder(_ id: UUID, at date: Date?) {
@@ -350,6 +353,7 @@ extension Workbench {
         edit([task], label: label, icon: "bell", tone: .accent) { task in
             store.setReminder(date, for: task)
         }
+        if date != nil { onScheduleReminders?([id]) }
     }
 
     /// A repeat rule, or none. Choosing the rule the task already has changes nothing.
@@ -966,6 +970,7 @@ extension Workbench {
             opened = headings
         case let .savedSeveral(blocks, headings, failure):
             didAddSpoken(blocks, opened: headings)
+            onScheduleReminders?(blocks.map(\.id))
             if let failure {
                 captureNotice = failure
                 AccessibilityNotification.Announcement(failure.text).post()
@@ -975,6 +980,7 @@ extension Workbench {
             return blocks.last
         }
         captureNotice = nil
+        onScheduleReminders?([block.id])
         let list = store.list(id: block.listID)
         let here: Bool = {
             switch navigator.route {
@@ -1279,6 +1285,7 @@ extension Workbench {
                                      didRegister: { self.logEdit(label, ids: [id]) }) {
             store.applyCapture(snapshot, to: task)
         }
+        if snapshot.date != nil { onScheduleReminders?([id]) }
         flash(\.freshChip, [id], for: 700)
     }
 
