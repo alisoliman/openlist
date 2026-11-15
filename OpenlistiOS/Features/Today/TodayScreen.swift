@@ -19,8 +19,11 @@ struct TodayScreen: View {
         // Ordered outside the clock, so its ticks don't walk every outline again.
         let outline = library.taskRowsInOutlineOrder(blocks: blocks)
         let parents = parentTasks(in: outline)
+        // Read the environment while this view is installed. The timeline's
+        // callback can run later, including during a navigation transition.
+        let clock = env.clock
         TimelineView(.periodic(from: .now, by: 20)) { _ in
-            TodayPage(outline: outline, parents: parents, now: env.now)
+            TodayPage(outline: outline, parents: parents, now: clock.now)
         }
     }
 
