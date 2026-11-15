@@ -217,6 +217,7 @@ struct OLTaskRow<TrailingControl: View>: View {
     var subtitle: String?
     var subtitleIcon: String?
     var subtitleAccent: Color = OL.muted
+    var emphasizesTitle = false
     var trailing: OLTrailing?
     /// Draws the hairline above, from the checkbox's right edge.
     var separator: OLSeparator = .none
@@ -243,7 +244,7 @@ struct OLTaskRow<TrailingControl: View>: View {
             OLCheckbox(state, title: title, action: onToggle)
             content
         }
-        .padding(.leading, 16 + (depth > 0 ? 36 : 0))
+        .padding(.leading, 16 + OLMetrics.taskIndent(depth))
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(isHighlighted ? OL.accentSoft : .clear)
         .overlay(alignment: .top) { OLSeparatorLine(separator: separator) }
@@ -253,7 +254,7 @@ struct OLTaskRow<TrailingControl: View>: View {
         let oneLine = subtitle == nil && trailing == nil
         let label = VStack(alignment: .leading, spacing: 3) {
             Text(title)
-                .font(OLFont.rowTitle)
+                .font(emphasizesTitle && state != .done ? OLFont.rowTitle.weight(.medium) : OLFont.rowTitle)
                 .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
                 .strikethrough(state == .done, color: OL.muted)
                 .foregroundStyle(state == .done ? OL.muted : OL.ink)
@@ -325,7 +326,7 @@ struct OLTaskRow<TrailingControl: View>: View {
                 if let subtitleIcon {
                     OLListGlyph(icon: subtitleIcon, accent: subtitleAccent, size: 13)
                 }
-                Text(subtitle)
+                Text(subtitle).font(emphasizesTitle ? .caption : OLFont.meta)
             }
         }
     }
@@ -372,7 +373,7 @@ enum OLSeparator: Equatable {
     /// `.li.nest + .li` and `.li + .li.nest` set it.
     static func task(depth: Int, previousDepth: Int?) -> OLSeparator {
         guard let previousDepth else { return .none }
-        return .task(nested: depth > 0 || previousDepth > 0)
+        return .inset(52 + OLMetrics.taskIndent(max(depth, previousDepth)))
     }
 }
 
@@ -409,12 +410,14 @@ struct OLCardRows<Item: Identifiable, Row: View>: View {
     /// (a list's done fold). A screen of short cards, as Today's, stays
     /// eager, so its first layout is exact and the page opens at its top.
     var lazy = false
+    let shadow: OLShadow
 
-    init(_ items: [Item], lazy: Bool = false, depth: @escaping (Item) -> Int = { _ in 0 },
+    init(_ items: [Item], lazy: Bool = false, depth: @escaping (Item) -> Int = { _ in 0 }, shadow: OLShadow = .card,
          @ViewBuilder row: @escaping (Item, _ separator: OLSeparator) -> Row) {
         self.items = items
         self.lazy = lazy
         self.depth = depth
+        self.shadow = shadow
         self.row = row
     }
 
@@ -426,7 +429,7 @@ struct OLCardRows<Item: Identifiable, Row: View>: View {
                 VStack(spacing: 0) { rows }
             }
         }
-        .olCard()
+        .olCard(shadow: shadow)
     }
 
     private var rows: some View {

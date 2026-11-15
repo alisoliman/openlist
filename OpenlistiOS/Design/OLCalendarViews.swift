@@ -57,8 +57,52 @@ struct OLWeekStrip: View {
             .contentShape(.rect(cornerRadius: 16))
         }
         .buttonStyle(OLPressStyle(scale: 0.95))
-        .accessibilityLabel(day.formatted(.dateTime.weekday(.wide).day().month(.wide)))
+        .accessibilityLabel(OLFormat.eyebrowDate(day, calendar: calendar))
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+}
+
+/// Previous and next day controls that also work when seven date chips would crowd.
+struct OLDayStepper: View {
+    @Binding var selection: Date
+    let today: Date
+    let calendar: Calendar
+    var identifierPrefix = "agenda"
+    var hasHaptics = true
+    @Environment(\.olStyle) private var style
+
+    var body: some View {
+        HStack(spacing: 8) {
+            OLIconButton("chevron.backward", label: "Previous day", iconSize: 15) { step(-1) }
+                .accessibilityIdentifier("\(identifierPrefix).previousDay")
+            VStack(spacing: 0) {
+                Text(OLFormat.eyebrowDate(selection, calendar: calendar))
+                    .font(OLFont.groupHeader)
+                    .multilineTextAlignment(.center)
+                    .accessibilityAddTraits(.isHeader)
+                if !calendar.isDate(selection, inSameDayAs: today) {
+                    Button("Back to today") { choose(calendar.startOfDay(for: today)) }
+                        .font(OLFont.link)
+                        .foregroundStyle(OL.accentText)
+                        .frame(minHeight: 44)
+                        .contentShape(.rect)
+                        .buttonStyle(OLPressStyle())
+                        .accessibilityIdentifier("\(identifierPrefix).returnToToday")
+                }
+            }
+            .frame(maxWidth: .infinity)
+            OLIconButton("chevron.forward", label: "Next day", iconSize: 15) { step(1) }
+                .accessibilityIdentifier("\(identifierPrefix).nextDay")
+        }
+        .olFeedback(.selection, trigger: selection) { _, _ in hasHaptics }
+    }
+
+    private func step(_ offset: Int) {
+        if let day = calendar.date(byAdding: .day, value: offset, to: selection) { choose(day) }
+    }
+
+    private func choose(_ day: Date) {
+        withAnimation(style.animation(.snappy(duration: 0.22))) { selection = day }
     }
 }
 

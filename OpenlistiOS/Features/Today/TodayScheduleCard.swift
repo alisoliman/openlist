@@ -26,6 +26,7 @@ struct TodayScheduleCard: View {
     /// across launches: Today's card has it; the Work tab's, whose timeline
     /// goes on from its lines, stays open.
     var folds = false
+    var cardShadow: OLShadow = .card
     @AppStorage(Self.foldedKey, store: ReviewSession.defaults) private var storedFold = false
     /// The fold as last set here, ahead of the stored one: a stored value's
     /// change doesn't carry its animation, a state's does.
@@ -50,7 +51,7 @@ struct TodayScheduleCard: View {
         let isFolded = folds && (folded ?? storedFold)
         let notes = !isFolded && showsNotes && (!toPlan.isEmpty || connection != .connected)
         if showsNotes || !model.lines.isEmpty {
-            OLNowCard {
+            OLNowCard(shadow: cardShadow) {
                 VStack(alignment: .leading, spacing: 0) {
                     // The top line, folded or not, with the fold beside it;
                     // one fades into the other as the card folds.

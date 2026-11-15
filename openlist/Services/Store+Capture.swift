@@ -27,23 +27,41 @@ struct CaptureSnapshot {
 extension Store {
     /// Save a capture atomically. Failure rolls back only this capture;
     /// existing editor changes are flushed before starting the transaction.
-    /// The task goes at the end of its list's document, as the design's
-    /// capture, which gives it no place of its own, sorts it after every line.
-    /// A folded heading whose section it goes in opens, so the task shows
-    /// wherever the list is opened.
-    func saveCapture(_ snapshot: CaptureSnapshot, destinationID: UUID?, selectedForDay: Date? = nil) throws -> Block {
+    /// A heading places the task after its own rows, before any subheading.
+    /// Without a heading, capture appends to the document and opens its end.
+    func saveCapture(_ snapshot: CaptureSnapshot, destinationID: UUID?, selectedForDay: Date? = nil,
+                     headingID: UUID? = nil) throws -> Block {
         guard !snapshot.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw CaptureError.emptyTitle
         }
         try persistChanges()
-        guard let destination = list(id: destinationID) ?? inboxList(), !destination.isEffectivelyArchived else {
+        let requestedList = list(id: destinationID)
+        let destination = headingID == nil ? requestedList ?? inboxList() : requestedList
+        guard let destination, !destination.isEffectivelyArchived else {
+            if headingID != nil { throw CaptureError.unavailableSection }
             throw CaptureError.unavailableDestination
         }
         isSavingSuspended = true
         defer { isSavingSuspended = false }
         do {
-            let folded = foldedSections(atEndOf: destination.id)
-            let block = appendBlock(kind: .task, to: DocumentContext(listID: destination.id))
+            let block: Block
+            let folded: [Block]
+            if let headingID {
+                let roots = children(of: nil, listID: destination.id)
+                guard destination.id == destinationID,
+                      let index = roots.firstIndex(where: { $0.id == headingID && $0.parentID == nil }),
+                      BlockTree.sectionLevel(of: roots[index].kind) != nil else {
+                    throw CaptureError.unavailableSection
+                }
+                let heading = roots[index]
+                let directRows = roots.dropFirst(index + 1).prefix { BlockTree.sectionLevel(of: $0.kind) == nil }
+                let anchor = directRows.last(where: { $0.parentID == nil }) ?? heading
+                block = insertBlock(kind: .task, after: anchor)
+                folded = heading.isCollapsed ? [heading] : []
+            } else {
+                folded = foldedSections(atEndOf: destination.id)
+                block = appendBlock(kind: .task, to: DocumentContext(listID: destination.id))
+            }
             for heading in folded {
                 heading.isCollapsed = false
                 heading.touch()
@@ -83,11 +101,12 @@ extension Store {
     }
 
     enum CaptureError: LocalizedError {
-        case emptyTitle, unavailableDestination
+        case emptyTitle, unavailableDestination, unavailableSection
         var errorDescription: String? {
             switch self {
             case .emptyTitle: "Enter a task title before adding it."
             case .unavailableDestination: "That list is unavailable. Choose Inbox or another active list."
+            case .unavailableSection: "That section is no longer available in this list."
             }
         }
     }

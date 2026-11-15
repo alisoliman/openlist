@@ -74,7 +74,7 @@ struct ListDocumentTextRow: View {
 
     private var title: some View {
         Text(row.block.displayTitle)
-            .font(OLFont.rowTitleStrong)
+            .font(.body.weight(.semibold))
             .foregroundStyle(OL.ink)
             .fixedSize(horizontal: false, vertical: true)
     }

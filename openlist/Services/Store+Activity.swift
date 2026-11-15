@@ -32,22 +32,22 @@ struct ActivityHeatmapCache {
     private var history: CompletionHistorySignature?
     private var calendar: Calendar?
     private var day: Date?
+    private var weeks: Int?
 
-    /// Rebuilds the heatmap when the history, the calendar or the day has
-    /// changed, or a completion it held back has come due. Returns whether
-    /// it did.
+    /// Rebuilds the heatmap when the history, calendar, day or range changes,
+    /// or a completion it held back has come due. Returns whether it did.
     @MainActor
     mutating func refresh(store: Store, now: Date = .now, calendar: Calendar = .current, weeks: Int = 12) throws -> Bool {
         let day = calendar.startOfDay(for: now)
         let history = try store.completionHistorySignature()
-        if let heatmap, history == self.history, calendar == self.calendar, day == self.day,
+        if let heatmap, history == self.history, calendar == self.calendar, day == self.day, weeks == self.weeks,
            heatmap.nextCompletionAt.map({ now < $0 }) ?? true {
             return false
         }
         self.heatmap = nil
         self.history = nil
         let heatmap = try store.activityHeatmap(now: now, calendar: calendar, weeks: weeks)
-        (self.heatmap, self.history, self.calendar, self.day) = (heatmap, history, calendar, day)
+        (self.heatmap, self.history, self.calendar, self.day, self.weeks) = (heatmap, history, calendar, day, weeks)
         return true
     }
 }

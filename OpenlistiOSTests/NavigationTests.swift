@@ -290,6 +290,39 @@ struct NavigationTests {
 
     // MARK: Restoring
 
+    @Test func todayAndTimelineShareTheirDay() throws {
+        let navigator = PhoneNavigator()
+        let now = TestClock.mockupNow
+        let calendar = TestClock.calendar
+        let today = calendar.startOfDay(for: now)
+        let yesterday = try #require(calendar.date(byAdding: .day, value: -1, to: now))
+        navigator.selectDay(yesterday, now: now, calendar: calendar)
+        let firstDay = calendar.startOfDay(for: yesterday)
+        #expect(navigator.visibleRoute == .today)
+        #expect(navigator.selectedDay(now: now, calendar: calendar) == firstDay)
+        #expect(navigator.captureRequest.defaultDay(now: now) == firstDay)
+
+        navigator.openTimeline(on: navigator.timelineDay)
+        #expect(navigator.visibleRoute == .timeline)
+        #expect(navigator.selectedDay(now: now, calendar: calendar) == firstDay)
+        #expect(navigator.captureRequest.defaultDay(now: now) == firstDay)
+
+        let tomorrow = try #require(calendar.date(byAdding: .day, value: 1, to: now))
+        navigator.selectDay(tomorrow, now: now, calendar: calendar)
+        navigator.showTodayList()
+        #expect(navigator.visibleRoute == .today)
+        #expect(navigator.selectedDay(now: now, calendar: calendar) == calendar.startOfDay(for: tomorrow))
+
+        navigator.select(.inbox)
+        #expect(navigator.captureRequest.defaultDay(now: now) == nil)
+        navigator.select(.today)
+
+        navigator.selectDay(now, now: now, calendar: calendar)
+        #expect(navigator.timelineDay == nil)
+        #expect(navigator.selectedDay(now: now, calendar: calendar) == today)
+        #expect(navigator.captureRequest.defaultDay(now: now) == now)
+    }
+
     /// Where the phone was survives encoding, as the scene keeps it, and
     /// comes back as it was.
     @Test func aPlaceComesBackAsItWas() throws {
@@ -299,7 +332,8 @@ struct NavigationTests {
         navigator.open(.taskDetail(Self.id))
         navigator.select(.today)
         navigator.openTimeline(on: TestClock.mockupNow.addingTimeInterval(86_400))
-        navigator.captureDraft = CaptureDraft(text: "Book flights fri", listID: Self.id, dueDate: .cleared)
+        navigator.captureDraft = CaptureDraft(text: "Book flights fri", listID: Self.id, dueDate: .cleared,
+                                              defaultDay: .init(date: nil))
         let data = try JSONEncoder().encode(navigator.place)
 
         let restored = PhoneNavigator()

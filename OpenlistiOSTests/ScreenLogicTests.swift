@@ -549,7 +549,7 @@ struct ScreenLogicTests {
         let picked = try #require(calendar.date(bySettingHour: 18, minute: 45, second: 30, of: tomorrow))
         let parse = CaptureParse("Buy yen tomorrow #travel !high ~15m", parsesDates: false, reference: phone.env.now)
         let snapshot = CaptureDueDate.chosen(picked, includesTime: false)
-            .snapshot(parse, dueToday: false, now: phone.env.now, calendar: calendar)
+            .snapshot(parse, defaultDay: nil, calendar: calendar)
         let task = try phone.store.saveCapture(snapshot, destinationID: nil)
         let reader = ModelContext(phone.container)
         let id = task.id
@@ -567,8 +567,7 @@ struct ScreenLogicTests {
         let tomorrow = PhoneDay.tomorrow.date(now: phone.env.now, calendar: calendar)
         let picked = try #require(calendar.date(bySettingHour: 18, minute: 45, second: 0, of: tomorrow))
         let snapshot = CaptureDueDate.chosen(picked, includesTime: true)
-            .snapshot(CaptureParse("Pay the deposit", reference: phone.env.now), dueToday: true,
-                      now: phone.env.now, calendar: calendar)
+            .snapshot(CaptureParse("Pay the deposit", reference: phone.env.now), defaultDay: phone.env.now, calendar: calendar)
         let task = try phone.store.saveCapture(snapshot, destinationID: nil)
         #expect(task.dueDate == picked && task.includesTime)
         let id = task.id
@@ -582,8 +581,8 @@ struct ScreenLogicTests {
         let calendar = phone.env.settings.calendar
         for text in ["Call mum", "Call mum tomorrow 6pm #home"] {
             let parse = CaptureParse(text, reference: phone.env.now)
-            #expect(CaptureDueDate.automatic.snapshot(parse, dueToday: true, now: phone.env.now, calendar: calendar).date != nil)
-            let snapshot = CaptureDueDate.cleared.snapshot(parse, dueToday: true, now: phone.env.now, calendar: calendar)
+            #expect(CaptureDueDate.automatic.snapshot(parse, defaultDay: phone.env.now, calendar: calendar).date != nil)
+            let snapshot = CaptureDueDate.cleared.snapshot(parse, defaultDay: phone.env.now, calendar: calendar)
             let task = try phone.store.saveCapture(snapshot, destinationID: nil)
             #expect(task.dueDate == nil && !task.includesTime)
             #expect(task.displayTitle == "Call mum")
@@ -603,11 +602,11 @@ struct ScreenLogicTests {
         #expect(picked.afterEditing(from: withoutTime, to: old) == picked)
         let cleared = CaptureDueDate.cleared.afterEditing(from: superseded, to: old)
         #expect(cleared == .cleared)
-        #expect(cleared.snapshot(old, dueToday: true, now: now, calendar: calendar).date == nil)
+        #expect(cleared.snapshot(old, defaultDay: now, calendar: calendar).date == nil)
         let dated = CaptureParse("Pay the ryokan deposit friday 6pm #home ~15m", reference: now)
         let choice = picked.afterEditing(from: renamed, to: dated)
         #expect(choice == .automatic)
-        let snapshot = choice.snapshot(dated, dueToday: true, now: now, calendar: calendar)
+        let snapshot = choice.snapshot(dated, defaultDay: now, calendar: calendar)
         #expect(snapshot.date == dated.schedule?.date && snapshot.includesTime)
         let repeating = CaptureParse("Pay deposit every monday #travel", reference: now)
         #expect(CaptureDueDate.cleared.afterEditing(from: old, to: repeating) == .automatic)
@@ -620,13 +619,13 @@ struct ScreenLogicTests {
         #expect(parse.title == "Review Friday document")
         let picked = PhoneDay.weekend.date(now: now, calendar: calendar)
         let snapshot = CaptureDueDate.chosen(picked, includesTime: false)
-            .snapshot(parse, dueToday: false, now: now, calendar: calendar)
+            .snapshot(parse, defaultDay: nil, calendar: calendar)
         let task = try phone.store.saveCapture(snapshot, destinationID: nil)
         #expect(task.displayTitle == "Review Friday document")
         #expect(task.dueDate == picked && !task.includesTime)
         #expect(task.priority == .high && task.schedulingEstimateMinutes == 15)
         #expect(phone.store.labels(for: task).map(\.name) == ["work"])
-        let cleared = CaptureDueDate.cleared.snapshot(parse, dueToday: true, now: now, calendar: calendar)
+        let cleared = CaptureDueDate.cleared.snapshot(parse, defaultDay: now, calendar: calendar)
         #expect(cleared.title == "Review Friday document" && cleared.date == nil && !cleared.includesTime)
         #expect(cleared.labels == ["work"] && cleared.priority == .high && cleared.estimateMinutes == 15)
     }
@@ -636,16 +635,13 @@ struct ScreenLogicTests {
         let calendar = phone.env.settings.calendar
         let friday = try #require(calendar.date(byAdding: .day, value: 2, to: calendar.startOfDay(for: phone.env.now)))
         let choice = CaptureDueDate.chosen(friday, includesTime: false)
-        let weekly = choice.snapshot(CaptureParse("Review every week", reference: phone.env.now), dueToday: false,
-                                     now: phone.env.now, calendar: calendar)
+        let weekly = choice.snapshot(CaptureParse("Review every week", reference: phone.env.now), defaultDay: nil, calendar: calendar)
         let task = try phone.store.saveCapture(weekly, destinationID: nil)
         #expect(task.dueDate == friday)
         #expect(task.recurrence?.weekdays == [calendar.component(.weekday, from: friday)])
-        let named = choice.snapshot(CaptureParse("Review every monday", reference: phone.env.now), dueToday: false,
-                                    now: phone.env.now, calendar: calendar)
+        let named = choice.snapshot(CaptureParse("Review every monday", reference: phone.env.now), defaultDay: nil, calendar: calendar)
         #expect(named.date == friday && named.recurrence?.weekdays == [2])
-        let monthly = choice.snapshot(CaptureParse("Review monthly", reference: phone.env.now), dueToday: false,
-                                      now: phone.env.now, calendar: calendar)
+        let monthly = choice.snapshot(CaptureParse("Review monthly", reference: phone.env.now), defaultDay: nil, calendar: calendar)
         let monthlyTask = try phone.store.saveCapture(monthly, destinationID: nil)
         #expect(monthlyTask.recurrence?.dayOfMonth == calendar.component(.day, from: friday))
     }

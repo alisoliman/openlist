@@ -61,6 +61,21 @@ enum PhoneFixture {
         var workSession: WorkSession?
     }
 
+    #if DEBUG
+    /// Opt-in children keep the standard review fixture's six triage cards.
+    static func seedInboxHierarchyIfRequested(into store: Store) {
+        guard ProcessInfo.processInfo.environment["OpenlistInboxHierarchyFixture"] == "1",
+              let inbox = store.inboxList(),
+              let task = store.blocks(inList: inbox.id).first(where: { $0.text == "Send Jun the photos from Nara" }) else { return }
+        store.withoutLogging {
+            store.insertChild(text: "Pick the best photos", of: task, at: .last)
+            let done = store.insertChild(text: "Find the Nara album", of: task, at: .last)
+            done.isCompleted = true
+            store.save()
+        }
+    }
+    #endif
+
     @discardableResult
     static func seed(into store: Store, settings: AppSettings? = nil, now: Date,
                      calendar: Calendar = .current) -> Seeded? {

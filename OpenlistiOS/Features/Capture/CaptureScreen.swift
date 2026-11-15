@@ -26,6 +26,7 @@ struct CaptureScreen: View {
     @State private var text = ""
     @State private var listID: UUID?
     @State private var dueDate = CaptureDueDate.automatic
+    @State private var draftDay: CaptureDraft.DefaultDay?
     /// The date picker, shown in the sheet in place of the field.
     @State private var showsDuePicker = false
     @State private var resumesTyping = false
@@ -60,6 +61,7 @@ struct CaptureScreen: View {
         _listID = State(initialValue: draft.map(\.listID) ?? request.listID)
         _text = State(initialValue: draft?.text ?? "")
         _dueDate = State(initialValue: draft?.dueDate ?? .automatic)
+        _draftDay = State(initialValue: draft?.defaultDay)
         _note = State(initialValue: draft?.note ?? "")
         _writesNote = State(initialValue: !(draft?.note ?? "").isEmpty)
         _spoken = State(initialValue: spoken)
@@ -279,12 +281,13 @@ struct CaptureScreen: View {
         guard !heard.isEmpty else { return }
         saveError = nil
         env.haptics.play(.selection)
+        let rows = applyingDefaultDay(to: heard)
         if hasDraft {
-            spoken += heard
+            spoken += rows
             return
         }
         if voice.completionMode == .saveAutomatically {
-            spoken = heard
+            spoken = rows
             addSpoken()
             return
         }
@@ -296,7 +299,7 @@ struct CaptureScreen: View {
             isFocused = true
         } else {
             text = ""
-            spoken = heard
+            spoken = rows
         }
     }
 
@@ -361,12 +364,23 @@ struct CaptureScreen: View {
         return chips
     }
 
-    /// Adds the tasks heard, each to the list it named or the one picked, due
-    /// today when an undated one would be; any it couldn't add stay.
+    /// Freezes the due day of pending rows when Capture will keep them as a batch.
+    private func applyingDefaultDay(to tasks: [SpokenTask]) -> [SpokenTask] {
+        guard let day = request.defaultDay(now: env.now) else { return tasks }
+        let date = env.settings.calendar.startOfDay(for: day)
+        return tasks.map { task in
+            guard task.snapshot.date == nil else { return task }
+            var dated = task
+            dated.snapshot.date = date
+            dated.snapshot.includesTime = false
+            return dated
+        }
+    }
+
+    /// Adds the tasks heard, each to the list it named or the one picked.
     private func addSpoken() {
         guard !spoken.isEmpty else { return }
-        let result = env.store.saveSpokenTasks(spoken, destinationID: destination?.id,
-                                               undatedDay: request.dueToday ? env.now : nil)
+        let result = env.store.saveSpokenTasks(spoken, destinationID: destination?.id)
         spoken = result.unsaved
         if !result.saved.isEmpty { env.actions.reportCapture(result.saved) }
         guard let error = result.error else {
@@ -383,7 +397,8 @@ struct CaptureScreen: View {
     /// What's typed, as the navigator keeps it while Capture is away.
     private var draft: CaptureDraft? {
         text.isEmpty && note.isEmpty ? nil
-            : CaptureDraft(text: text, listID: listID, dueDate: dueDate, note: note.isEmpty ? nil : note)
+            : CaptureDraft(text: text, listID: listID, dueDate: dueDate, note: note.isEmpty ? nil : note,
+                           defaultDay: .init(date: defaultDay))
     }
 
     /// Cancel: closes at once with nothing to lose, else asks first.
@@ -419,7 +434,9 @@ struct CaptureScreen: View {
         let listID = listID
         env.tray.show("Kept what you were writing", icon: "square.and.pencil", tone: .neutral, seconds: 6,
                       actionTitle: "Open") {
-            navigator.open(.capture(CaptureRequest(listID: listID)))
+            var request = navigator.captureRequest
+            request.listID = listID
+            navigator.open(.capture(request))
         }
     }
 
@@ -510,9 +527,14 @@ struct CaptureScreen: View {
 
     // MARK: What Add saves
 
+    private var defaultDay: Date? {
+        if let draftDay { return draftDay.date }
+        return request.defaultDay(now: env.now).map { env.settings.calendar.startOfDay(for: $0) }
+    }
+
     /// Add and Return save the same date the calendar chip previews, and the note.
     private func snapshot(_ parse: CaptureParse) -> CaptureSnapshot {
-        var snapshot = dueDate.snapshot(parse, dueToday: request.dueToday, now: env.now, calendar: env.settings.calendar)
+        var snapshot = dueDate.snapshot(parse, defaultDay: defaultDay, calendar: env.settings.calendar)
         snapshot.note = note
         return snapshot
     }
@@ -546,10 +568,11 @@ struct CaptureScreen: View {
     /// Lines pasted as rows, each read for its own tokens, `@` list included.
     private func takePasted(_ lines: [String]) {
         let lists = library.lists.map { ($0.id, $0.displayTitle) }
-        spoken += lines.map { line in
+        let tasks = lines.map { line in
             let parse = CaptureParse(line, parsesDates: env.settings.parsesNaturalLanguageDates, reference: env.now, lists: lists)
             return SpokenTask(snapshot: parse.snapshot(), listID: parse.listID)
         }.filter { !$0.snapshot.title.isEmpty }
+        spoken += applyingDefaultDay(to: tasks)
         saveError = nil
         env.haptics.play(.selection)
     }
@@ -743,6 +766,7 @@ struct CaptureScreen: View {
             writesNote = false
             literals = []
             dueDate = .automatic
+            draftDay = nil
             env.navigator.captureDraft = nil
             noteFocused = false
             isFocused = true

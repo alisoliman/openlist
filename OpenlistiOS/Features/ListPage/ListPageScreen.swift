@@ -15,6 +15,7 @@ struct ListPageScreen: View {
     let listID: UUID
     @Environment(PhoneEnvironment.self) private var env
     @Environment(\.phoneLibrary) private var library
+    @Environment(\.olStyle) private var style
     @Query private var blocks: [Block]
     @State private var isSelecting = false
     @State private var showsDone: Bool?
@@ -23,6 +24,9 @@ struct ListPageScreen: View {
     @State private var namesChild = false
     @State private var confirmsTrash = false
     @State private var editsAppearance = false
+    @State private var activeSection: UUID?
+    @State private var sectionDrafts: [UUID: String] = [:]
+    @State private var addedTask: UUID?
 
     init(listID: UUID) {
         self.listID = listID
@@ -30,13 +34,21 @@ struct ListPageScreen: View {
     }
 
     var body: some View {
+        ScrollViewReader { scroll in screen(scroll: scroll) }
+    }
+
+    private func screen(scroll: ScrollViewProxy) -> some View {
         let navigator = env.navigator
         let list = env.store.list(id: listID)
         let document = ListDocument(blocks: blocks, sorting: list?.sorting ?? .manual, closing: env.actions.closing)
         let page = document.page
+        let allowsTaskEntry = list?.isEffectivelyArchived == false && !isSelecting
+        let items = document.items(allowsTaskEntry: allowsTaskEntry)
+        let activeEntryVisible = activeSection.map { section in items.contains { $0.id == .taskEntry(section) } } ?? false
+        let addedTaskIsVisible = addedTask.map { id in page.rows.contains { $0.id == id } } ?? false
         let children = list.map(library.children(of:)) ?? []
         let doneOpen = showsDone ?? list?.showsCompleted(default: env.settings.showsCompletedTasks) ?? false
-        OLScreen(identifier: PhoneRoute.list(listID).screenIdentifier) {
+        return OLScreen(identifier: PhoneRoute.list(listID).screenIdentifier) {
             OLListHeaderBand(icon: list?.icon ?? "📋", accent: list?.accent ?? .graphite,
                              editAppearance: list?.isSystemInbox == false ? { editsAppearance = true } : nil) {
                 OLTopBar {
@@ -65,7 +77,7 @@ struct ListPageScreen: View {
             // "Empty" with no tasks at all, as its card says, not "All done".
             OLHeader(list?.displayTitle ?? "List",
                      sub: page.openCount > 0 ? "\(page.openCount) open" : library.tasks(in: listID).isEmpty ? "Empty" : "All done",
-                     topSpacing: 14)
+                     subFont: .caption.monospacedDigit(), topSpacing: 14)
             if page.rows.isEmpty && page.completed.isEmpty && children.isEmpty {
                 let archived = list?.isEffectivelyArchived == true
                 // Archived, it offers its way back; a list archived with its
@@ -79,26 +91,13 @@ struct ListPageScreen: View {
                 }
                 .padding(.top, 60)
             }
-            if !page.rows.isEmpty {
-                LazyVStack(spacing: 0) {
-                    ForEach(Array(page.rows.enumerated()), id: \.element.id) { index, row in
-                        if row.block.isTask {
-                            let previous = index > 0 ? page.rows[index - 1] : nil
-                            ListDocumentTaskRow(row: row,
-                                                separator: .task(depth: row.depth, previousDepth: previous?.block.isTask == true ? previous?.depth : nil),
-                                                canDisclose: document.canDisclose(row), progress: document.progress(for: row.block))
-                        } else {
-                            ListDocumentTextRow(row: row, canDisclose: document.canDisclose(row))
-                        }
-                    }
-                }
-                .olCard()
-                .padding(.top, OLMetrics.headerGap)
+            if !items.isEmpty {
+                documentCard(document, items: items)
             }
             if !page.completed.isEmpty {
                 OLFold("done", count: page.completed.count,
                        isExpanded: Binding(get: { doneOpen }, set: { showsDone = $0 })) {
-                    OLCardRows(page.completed, lazy: true) { task, separator in
+                    OLCardRows(page.completed, lazy: true, shadow: .softCard) { task, separator in
                         PhoneTaskRow(task: task, context: .list, separator: separator)
                     }
                 }
@@ -109,7 +108,8 @@ struct ListPageScreen: View {
                     OLListGrid {
                         ForEach(children) { child in
                             OLListCard(title: child.displayTitle, icon: child.icon, accent: child.accent,
-                                       detail: library.cardDetail(for: child)) {
+                                       detail: library.cardDetail(for: child), shadow: .softCard,
+                                       detailFont: .caption.monospacedDigit()) {
                                 navigator.open(.list(child.id))
                             }
                         }
@@ -149,8 +149,67 @@ struct ListPageScreen: View {
             namesChild = false
             confirmsTrash = false
             editsAppearance = false
+            activeSection = nil
+        }
+        .onChange(of: activeEntryVisible) { _, visible in
+            if !visible { activeSection = nil }
+        }
+        .onChange(of: addedTaskIsVisible) { _, visible in
+            guard visible else { return }
+            addedTask = nil
+            guard let activeSection else { return }
+            // The entry moves with the new row. Keep it above the Undo tray
+            // that appears at the bottom of the keyboard's safe area.
+            withAnimation(style.animation(.easeOut(duration: 0.2))) {
+                scroll.scrollTo(ListDocument.Item.ID.taskEntry(activeSection), anchor: .center)
+            }
         }
         .onAppear { list.map(env.store.markOpened) }
+        .onDisappear { activeSection = nil }
+    }
+
+    private func documentCard(_ document: ListDocument, items: [ListDocument.Item]) -> some View {
+        LazyVStack(spacing: 0) {
+            ForEach(items) { item in
+                switch item {
+                case let .block(row, previousTaskDepth):
+                    if row.block.isTask {
+                        ListDocumentTaskRow(row: row, separator: .task(depth: row.depth, previousDepth: previousTaskDepth),
+                                            canDisclose: document.canDisclose(row), progress: document.progress(for: row.block))
+                    } else {
+                        ListDocumentTextRow(row: row, canDisclose: document.canDisclose(row))
+                    }
+                case let .taskEntry(heading):
+                    let headingID = heading.id
+                    ListSectionTaskEntry(headingID: headingID, headingTitle: heading.displayTitle,
+                                         activeSection: $activeSection, draft: draft(for: headingID)) { title in
+                        addTask(title, under: headingID)
+                    }
+                    .id(item.id)
+                }
+            }
+        }
+        .olCard(shadow: .softCard)
+        .padding(.top, OLMetrics.headerGap)
+    }
+
+    private func draft(for headingID: UUID) -> Binding<String> {
+        Binding(get: { sectionDrafts[headingID, default: ""] },
+                set: { sectionDrafts[headingID] = $0.isEmpty ? nil : $0 })
+    }
+
+    private func addTask(_ title: String, under headingID: UUID) -> Bool {
+        do {
+            let task = try env.store.saveCapture(.init(title: title), destinationID: listID, headingID: headingID)
+            addedTask = task.id
+            env.actions.reportCapture(task)
+            return true
+        } catch {
+            let message = "Task wasn’t added. \(error.localizedDescription)"
+            env.tray.show(message, icon: "exclamationmark.circle", tone: .danger, seconds: 5)
+            env.haptics.play(.error)
+            return false
+        }
     }
 
     private func menu(_ list: TaskList) -> some View {

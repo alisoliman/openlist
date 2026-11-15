@@ -159,6 +159,73 @@ do {
           "A task is planned from the day it was picked for")
 }
 
+// Browsing another day uses its dates and slots without moving the live clock.
+do {
+    let store = try makeStore()
+    let list = store.createList(title: "Nearby days")
+    func task(_ title: String, under parent: Block? = nil, set: (Block) -> Void = { _ in }) -> Block {
+        let block = store.appendBlock(kind: .task, text: title, to: .init(listID: list.id, rootBlockID: parent?.id))
+        set(block)
+        return block
+    }
+    let yesterdayDue = task("Due yesterday") { $0.dueDate = at(-1) }
+    let todayDue = task("Due today") { $0.dueDate = at(0); $0.isStarred = true }
+    let tomorrowDue = task("Due tomorrow") { $0.dueDate = at(1, 11); $0.includesTime = true }
+    let dayAfterDue = task("Due the day after", under: tomorrowDue) { $0.dueDate = at(2, 9) }
+    let tomorrowEvening = task("Due tomorrow evening", under: dayAfterDue) { $0.dueDate = at(1, 18); $0.includesTime = true }
+    let carried = task("Planned yesterday") { $0.selectedForDay = at(-1) }
+    let planned = task("Planned tomorrow, due earlier") { $0.selectedForDay = at(1); $0.dueDate = at(-1) }
+    let slotted = task("Has only a slot tomorrow")
+    let otherSlot = task("Has only a slot today")
+    let scheduledAndDue = task("Planned and due tomorrow") { $0.selectedForDay = at(1); $0.dueDate = at(1) }
+    let doneYesterday = task("Finished yesterday") { $0.isCompleted = true; $0.completedAt = at(-1, 16) }
+    let doneToday = task("Finished today") { $0.isCompleted = true; $0.completedAt = at(0, 8) }
+    let undated = task("Starred and undated") { $0.isStarred = true }
+    let tasks = [yesterdayDue, todayDue, tomorrowDue, dayAfterDue, tomorrowEvening, carried, planned, slotted,
+                 otherSlot, scheduledAndDue, doneYesterday, doneToday, undated]
+    let slots = [slotted.id: at(1, 9), otherSlot.id: at(0, 10)]
+
+    let tomorrow = TodayAgenda(tasks: tasks, on: at(1), now: now, order: .schedule, time: { slots[$0.id] })
+    check(tomorrow.overdue.isEmpty && tomorrow.starred.isEmpty && tomorrow.doneToday.isEmpty,
+          "Browsing tomorrow does not carry overdue, starred or completed work across from today")
+    check(titles(tomorrow.due) == titles([tomorrowDue, scheduledAndDue]) && titles(tomorrow.tonight) == titles([tomorrowEvening]),
+          "Tomorrow keeps exact due dates, including evening, and a task both due and planned appears once")
+    check(titles(tomorrow.planned) == titles([slotted, planned]) && tomorrow.progress == (0, 5),
+          "A selected-day slot or explicit plan qualifies independently of deadlines, while an old plan and another day's slot do not")
+    let outline = BlockTree.taskOutline(BlockTree.flatten(store.blocks(inList: list.id), respectCollapse: false))
+    let tomorrowRows = tomorrow.nestedRows(in: outline)
+    check(tomorrowRows.due.map(\.id) == [tomorrowDue, tomorrowEvening, scheduledAndDue].map(\.id)
+          && tomorrowRows.due.map(\.depth) == [0, 1, 0] && tomorrowRows.tonight.isEmpty,
+          "An eligible child stays below its eligible ancestor without pulling along an intermediary due another day")
+
+    let yesterday = TodayAgenda(tasks: tasks, on: at(-1), now: now)
+    check(titles(yesterday.due) == titles([yesterdayDue, planned]) && titles(yesterday.planned) == titles([carried])
+          && titles(yesterday.doneToday) == titles([doneYesterday]),
+          "Browsing yesterday keeps its due, planned and completed tasks on that day")
+    let finishedLive = ActivityCompletion(taskID: doneYesterday.id, occurrenceID: doneYesterday.occurrenceID,
+                                          wasRecurring: true, date: at(-1, 16))
+    let previousOccurrence = ActivityCompletion(taskID: doneYesterday.id, occurrenceID: UUID(),
+                                                wasRecurring: true, date: at(-1, 9))
+    let reversed = ActivityCompletion(taskID: UUID(), completionID: UUID(), wasRecurring: false, date: at(-1, 10))
+    let undo = ActivityReversal(taskID: reversed.taskID, completionID: reversed.completionID, date: at(0, 9))
+    let heatmap = ActivityHeatmap(completions: [finishedLive, previousOccurrence, reversed], reversals: [undo], now: now)
+    let yesterdayHistory = heatmap.days.first { calendar.isDate($0.id, inSameDayAs: at(-1)) }
+    check(yesterday.additionalCompletions(in: yesterdayHistory) == [previousOccurrence],
+          "Earlier recurring occurrences remain visible, without duplicating live completions or restoring undone history")
+    var cache = ActivityHeatmapCache()
+    let shortRange = try cache.refresh(store: store, now: now, weeks: 1)
+    let sameRange = try cache.refresh(store: store, now: now, weeks: 1)
+    let shortRangeStart = cache.heatmap?.start
+    let longerRange = try cache.refresh(store: store, now: now, weeks: 2)
+    check(shortRange && !sameRange && longerRange && cache.heatmap?.start != shortRangeStart,
+          "Changing the visible history range refreshes the cache on the same civil day")
+    let actualToday = TodayAgenda(tasks: tasks, on: at(0, 0), now: now, order: .schedule, time: { slots[$0.id] })
+    let original = TodayAgenda(tasks: tasks, now: now, order: .schedule, time: { slots[$0.id] })
+    check(titles(actualToday.scheduled) == titles(original.scheduled) && titles(actualToday.starred) == titles(original.starred)
+          && titles(actualToday.doneToday) == titles(original.doneToday),
+          "An explicitly selected current day keeps the live Today rules")
+}
+
 // Today's display keeps each eligible parent's whole task outline together,
 // without changing the tasks the agenda itself counts or acts on.
 do {
@@ -236,6 +303,24 @@ do {
           && agenda.due.map(\.id) == [dueChild, independent, early].map(\.id)
           && agenda.overdue.map(\.id) == [overdueGrandchild, overdue].map(\.id),
           "Display expansion doesn't change Today eligibility, counts, progress or action targets")
+
+    let separated = agenda.nestedRows(in: outline, separateCompleted: true)
+    check(!separated.starred.contains { $0.id == doneInline.id }
+          && separated.doneToday.contains { $0.id == doneInline.id }
+          && separated.starred.contains { $0.id == olderInline.id && $0.depth == 1 },
+          "A completion on the displayed day has its own fold, while older done subtasks stay inline")
+    check(separated.planned.contains { $0.id == closing.id } && !separated.doneToday.contains { $0.id == closing.id },
+          "Separating the completed fold still leaves a closing task in its open group until the dwell settles")
+
+    let withoutWorkingParent = agenda.nestedRows(in: outline, excluding: starred.id)
+    check(!withoutWorkingParent.starred.contains { $0.id == starred.id }
+          && withoutWorkingParent.due.contains { $0.id == dueChild.id && $0.depth == 0 }
+          && withoutWorkingParent.overdue.contains { $0.id == overdueGrandchild.id && $0.depth == 0 },
+          "A parent in Now leaves its qualifying subtasks in their own groups")
+    let withoutWorkingChild = agenda.nestedRows(in: outline, excluding: undated.id)
+    check(!withoutWorkingChild.starred.contains { $0.id == undated.id }
+          && withoutWorkingChild.starred.contains { $0.id == deepChild.id && $0.depth == 1 },
+          "Skipping a working subtask lifts its descendants one level in the visible branch")
 
     let scheduled = TodayAgenda(tasks: outline.map(\.block), closing: [closing.id], now: now, order: .schedule)
         .nestedRows(in: outline)

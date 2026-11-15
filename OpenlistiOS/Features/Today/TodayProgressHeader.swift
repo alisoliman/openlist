@@ -1,45 +1,47 @@
 import SwiftUI
 
 /// A small completion rail keeps progress visible without competing with tasks.
-struct TodayProgressHeader: View {
+struct TodayProgressHeader<Actions: View>: View {
+    let title: String
     let done: Int
     let total: Int
+    @ViewBuilder var actions: Actions
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        VStack(spacing: 12) {
-            if total == 0 {
-                // Nothing due, planned or done today: no "0 of 0 done" and
-                // empty rail over the clear day, which says so itself.
-                OLTitle("Today")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            } else if dynamicTypeSize.isAccessibilitySize {
-                VStack(alignment: .leading, spacing: 8) {
-                    OLTitle("Today")
-                    count
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            } else {
-                HStack(alignment: .firstTextBaseline) {
-                    OLTitle("Today")
-                    Spacer(minLength: 8)
-                    count
-                }
-            }
+        VStack(alignment: .leading, spacing: 8) {
+            OLTopBar {
+                OLTitle(title)
+                    .padding(.leading, 10)
+            } trailing: { actions }
             if total > 0 {
-                ProgressView(value: Double(done), total: Double(total))
-                    .tint(OL.ink)
-                    .accessibilityLabel("Today's progress")
-                    .accessibilityValue("\(done) of \(total) done")
-                    .accessibilityIdentifier("today.progress")
+                if dynamicTypeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: 8) {
+                        count
+                        rail
+                    }
+                } else {
+                    HStack(spacing: 12) {
+                        rail
+                        count
+                    }
+                }
             }
         }
         .padding(.top, 4)
     }
 
+    private var rail: some View {
+        ProgressView(value: Double(done), total: Double(total))
+            .tint(OL.muted)
+            .accessibilityLabel("\(title)’s progress")
+            .accessibilityValue("\(done) of \(total) done")
+            .accessibilityIdentifier("today.progress")
+    }
+
     private var count: some View {
         Text("\(done) of \(total) done")
-            .font(OLFont.meta)
+            .font(.caption.monospacedDigit())
             .foregroundStyle(OL.muted)
             .contentTransition(.numericText())
     }

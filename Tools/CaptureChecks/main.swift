@@ -48,6 +48,36 @@ let unfolded = try store.saveCapture(CaptureSnapshot(title: "Shows"), destinatio
 check(unfolded.parentID == nil && !chapter.isCollapsed && !lastSection.isCollapsed && earlier.isCollapsed
       && store.foldedSections(atEndOf: foldedList.id).isEmpty,
       "A capture under folded headings opens them, so it shows wherever the list is opened, and leaves the others folded")
+
+do {
+    let sectionList = store.createList(title: "Section capture")
+    let document = DocumentContext(listID: sectionList.id)
+    let heading = store.appendBlock(kind: .heading1, text: "Before we go", to: document)
+    let existing = store.appendBlock(kind: .task, text: "Book a room", to: document)
+    let note = store.appendBlock(kind: .paragraph, text: "Bring the confirmation.", to: document)
+    let subheading = store.appendBlock(kind: .heading2, text: "Packing", to: document)
+    let packingTask = store.appendBlock(kind: .task, text: "Pack a charger", to: document)
+    let nextHeading = store.appendBlock(kind: .heading1, text: "At the hotel", to: document)
+    let first = try store.saveCapture(.init(title: "Print the confirmation"), destinationID: sectionList.id, headingID: heading.id)
+    let second = try store.saveCapture(.init(title: "Check in online"), destinationID: sectionList.id, headingID: heading.id)
+    let expected = [heading, existing, note, first, second, subheading, packingTask, nextHeading].map(\.id)
+    check(BlockTree.children(of: nil, in: store.blocks(inList: sectionList.id)).map(\.id) == expected,
+          "Successive section captures go after its direct rows and before the next heading, including a subheading")
+    check([first, second].allSatisfy { $0.parentID == nil && $0.listID == sectionList.id },
+          "A section capture is a root task in its list")
+
+    let otherRows = store.blocks(inList: list.id).map(\.id)
+    do {
+        _ = try store.saveCapture(.init(title: "Wrong section"), destinationID: list.id, headingID: heading.id)
+        preconditionFailure("A heading from another list should reject section capture")
+    } catch {
+        check(store.blocks(inList: list.id).map(\.id) == otherRows
+              && BlockTree.children(of: nil, in: store.blocks(inList: sectionList.id)).map(\.id) == expected
+              && store.blocks(inList: inbox.id).isEmpty,
+              "A rejected section capture leaves both lists and Inbox alone")
+    }
+}
+
 let parsed = try store.saveCapture(preview, destinationID: nil)
 check(parsed.listID == inbox.id && parsed.dueDate == preview.date && parsed.includesTime, "Inbox fallback preserves exact preview schedule")
 check(parsed.recurrence != nil && store.labels(for: parsed).map(\.name) == ["home"], "Capture persists labels and recurrence")

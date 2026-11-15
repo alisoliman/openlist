@@ -45,19 +45,21 @@ private struct TimelinePage: View {
         let navigator = env.navigator
         let calendar = env.settings.calendar
         let today = calendar.startOfDay(for: now)
-        let day = forWork ? today : navigator.timelineDay.map { calendar.startOfDay(for: $0) } ?? today
+        let day = forWork ? today : navigator.selectedDay(now: now, calendar: calendar)
         let schedule = TimelineSchedule(env: env, library: library, day: day, now: now, meetings: meetings)
         OLScreen(identifier: forWork ? PhoneRoute.work.screenIdentifier : PhoneRoute.timeline.screenIdentifier, scrolls: !fills) {
             OLTopBar {
-                OLEyebrow(OLFormat.eyebrowDate(now, calendar: calendar))
+                if fills || forWork {
+                    OLEyebrow(OLFormat.eyebrowDate(day, calendar: calendar))
+                }
             } trailing: {
                 if forWork {
                     OLIconButton("gearshape", label: "Settings", kind: .bare, iconSize: 22) { navigator.open(.settings) }
                 } else {
-                OLViewToggle(selection: .calendar, from: navigator.todaySwitchedFrom == .list ? .list : nil,
-                             listIdentifier: "timeline.list", arrived: { _ = navigator.takeTodaySwitch() }) { _ in
-                    navigator.open(.today)
-                }
+                    OLViewToggle(selection: .calendar, from: navigator.todaySwitchedFrom == .list ? .list : nil,
+                                 listIdentifier: "timeline.list", arrived: { _ = navigator.takeTodaySwitch() }) { _ in
+                        navigator.showTodayList()
+                    }
                 }
             }
         } content: {
@@ -70,10 +72,15 @@ private struct TimelinePage: View {
                     .padding(.top, OLMetrics.headerGap)
             }
             if !forWork {
-            OLWeekStrip(days: OLWeekStrip.week(containing: day, calendar: calendar),
-                        selection: Binding(get: { day },
-                                           set: { navigator.timelineDay = calendar.isDate($0, inSameDayAs: today) ? nil : $0 }),
-                        today: now, calendar: calendar)
+                let selection = Binding(get: { day }, set: { navigator.selectDay($0, now: now, calendar: calendar) })
+                Group {
+                    if fills {
+                        OLWeekStrip(days: OLWeekStrip.week(containing: day, calendar: calendar),
+                                    selection: selection, today: now, calendar: calendar)
+                    } else {
+                        OLDayStepper(selection: selection, today: now, calendar: calendar, identifierPrefix: "timeline")
+                    }
+                }
                 .padding(.top, 14)
             }
             OLGroup(schedule.title) {

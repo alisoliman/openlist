@@ -16,6 +16,8 @@ struct OLListCard: View {
     var accent: ListAccent = .graphite
     /// "7 open"; nil draws nothing.
     var detail: String?
+    var shadow: OLShadow = .card
+    var detailFont = OLFont.meta
     let action: () -> Void
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
@@ -39,7 +41,7 @@ struct OLListCard: View {
                         .multilineTextAlignment(.leading)
                     if let detail {
                         Text(detail)
-                            .font(OLFont.meta)
+                            .font(detailFont)
                             .foregroundStyle(OL.muted)
                             .contentTransition(.numericText())
                     }
@@ -50,7 +52,7 @@ struct OLListCard: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             .frame(maxHeight: .infinity, alignment: .top)
-            .olCard()
+            .olCard(shadow: shadow)
             .contentShape(.rect(cornerRadius: 20))
         }
         .buttonStyle(OLPressStyle(scale: 0.97))
@@ -123,7 +125,7 @@ struct OLListHeaderBand<TopBar: View>: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             topBar
-            let tile = OLTile(icon: icon, accent: accent.color, size: 60, raised: true)
+            let tile = OLTile(icon: icon, accent: accent.color, size: 60, raised: true, shadow: .softCard)
             if let editAppearance {
                 Button(action: editAppearance) { tile }
                     .buttonStyle(OLPressStyle())
@@ -153,14 +155,18 @@ struct OLListHeaderBand<TopBar: View>: View {
 /// quiet notes (`OLNowNote`) with a light way on. The lines say it; the
 /// card adds no title of its own.
 struct OLNowCard<Content: View>: View {
+    let shadow: OLShadow
     @ViewBuilder var content: Content
 
-    init(@ViewBuilder content: () -> Content) { self.content = content() }
+    init(shadow: OLShadow = .card, @ViewBuilder content: () -> Content) {
+        self.shadow = shadow
+        self.content = content()
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) { content }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .olCard()
+            .olCard(shadow: shadow)
     }
 }
 

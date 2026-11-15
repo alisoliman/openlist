@@ -5,18 +5,17 @@
 
 import Foundation
 
-/// A date picked in Capture, distinct from leaving the typed date (or
-/// Today's default) alone. Clearing explicitly keeps an undated task undated.
+/// A date picked in Capture, distinct from accepting a typed or default date.
 enum CaptureDueDate: Equatable, Codable {
     case automatic
     case chosen(Date, includesTime: Bool)
     case cleared
 
-    func snapshot(_ parse: CaptureParse, dueToday: Bool, now: Date, calendar: Calendar) -> CaptureSnapshot {
+    func snapshot(_ parse: CaptureParse, defaultDay: Date?, calendar: Calendar) -> CaptureSnapshot {
         var snapshot = parse.snapshot()
         switch self {
         case .automatic:
-            if snapshot.date == nil, dueToday { snapshot.date = calendar.startOfDay(for: now) }
+            if snapshot.date == nil, let defaultDay { snapshot.date = calendar.startOfDay(for: defaultDay) }
         case let .chosen(date, includesTime):
             snapshot.date = includesTime ? date : calendar.startOfDay(for: date)
             snapshot.includesTime = includesTime
