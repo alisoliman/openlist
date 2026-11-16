@@ -30,12 +30,13 @@ private struct PhoneShell: View {
     @SceneStorage("phone.place") private var savedPlace: Data?
 
     var body: some View {
-        @Bindable var navigator = env.navigator
+        let environment = env
+        @Bindable var navigator = environment.navigator
         let showsDock = navigator.showsDock && !isKeyboardUp
         TabView(selection: $navigator.tab) {
             ForEach(PhoneTab.allCases) { tab in
                 Tab(tab.title, systemImage: tab.symbol, value: tab) {
-                    PhoneTabStack(tab: tab)
+                    PhoneTabStack(tab: tab, env: environment)
                         .toolbarVisibility(.hidden, for: .tabBar)
                         // The dock's room, which the inset on the TabView below
                         // doesn't pass to its tabs: a page's end scrolls clear of it.
@@ -130,14 +131,17 @@ private struct PhoneShell: View {
 /// A tab's navigation stack. Every pushed route can land on any tab.
 struct PhoneTabStack: View {
     let tab: PhoneTab
-    @Environment(PhoneEnvironment.self) private var env
+    let env: PhoneEnvironment
     @Environment(\.olStyle) private var style
 
     var body: some View {
         let navigator = env.navigator
         NavigationStack(path: Binding(get: { navigator.path(for: tab) }, set: { navigator.setPath($0, for: tab) })) {
             root
-                .navigationDestination(for: PhoneRoute.self) { PhoneScreen(route: $0) }
+                .environment(env)
+                .navigationDestination(for: PhoneRoute.self) { route in
+                    PhoneScreen(route: route).environment(env)
+                }
         }
     }
 

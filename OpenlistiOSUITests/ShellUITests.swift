@@ -13,6 +13,26 @@ final class ShellUITests: XCTestCase {
     }
 
     @MainActor
+    func testColdLaunchThenImmediatelyReselectToday() {
+        let app = XCUIApplication.reviewSession()
+        app.launch()
+        app.waitForScreen("screen.today", timeout: 20)
+        app.dock("today").tap()
+        app.waitForScreen("screen.today")
+        XCTAssertEqual(app.state, .runningForeground)
+    }
+
+    @MainActor
+    func testColdLaunchIntoInboxThenSwitchToToday() {
+        let app = XCUIApplication.reviewSession(environment: ["OpenlistOpenRoute": "inbox"])
+        app.launch()
+        app.waitForScreen("screen.inbox", timeout: 20)
+        app.dock("today").tap()
+        app.waitForScreen("screen.today")
+        XCTAssertEqual(app.state, .runningForeground)
+    }
+
+    @MainActor
     func testTabsCaptureAndSettings() {
         let app = XCUIApplication.reviewSession()
         app.launch()
