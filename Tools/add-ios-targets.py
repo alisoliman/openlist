@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Adds the iPhone companion's targets to openlist.xcodeproj and keeps their
+"""Adds the iOS app's targets to openlist.xcodeproj and keeps their
 shared-file membership in step with Tools/iOS/shared-sources.txt. The share
 extension (OpenlistiOSShare) came later, so a project that has the others
 gets it added on its own.
@@ -144,11 +144,11 @@ COMMON_IOS = {
     "SDKROOT": "iphoneos",
     "SUPPORTED_PLATFORMS": "iphoneos iphonesimulator",
     "SUPPORTS_MACCATALYST": "NO",
-    # Otherwise an Apple silicon Mac could run a second, iPhone-flavoured
+    # Otherwise an Apple silicon Mac could run a second, iOS version of
     # Openlist against the same CloudKit container.
     "SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD": "NO",
     "SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD": "NO",
-    "TARGETED_DEVICE_FAMILY": "1",
+    "TARGETED_DEVICE_FAMILY": "1,2",
     "SWIFT_APPROACHABLE_CONCURRENCY": "YES",
     "SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY": "YES",
     "SWIFT_VERSION": "6.0",
@@ -169,11 +169,15 @@ def app_settings(name):
         "INFOPLIST_KEY_CFBundleDisplayName": "Openlist Dev" if dev else "Openlist",
         "INFOPLIST_KEY_LSApplicationCategoryType": "public.app-category.productivity",
         "INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription": CALENDAR,
+        "INFOPLIST_KEY_NSMicrophoneUsageDescription": "Openlist listens only while you say tasks to add, and reads your words on this device.",
         "INFOPLIST_KEY_NSHumanReadableCopyright": COPYRIGHT,
         "INFOPLIST_KEY_NSSupportsLiveActivities": "YES",
-        "INFOPLIST_KEY_UIApplicationSceneManifest_Generation": "YES",
         "INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents": "YES",
         "INFOPLIST_KEY_UILaunchScreen_Generation": "YES",
+        "INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad": (
+            "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown "
+            "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight"
+        ),
         "INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone": "UIInterfaceOrientationPortrait",
         "LD_RUNPATH_SEARCH_PATHS": ["$(inherited)", "@executable_path/Frameworks"],
         "PRODUCT_BUNDLE_IDENTIFIER": "solimanali.openlist.ios.dev" if dev else "solimanali.openlist.ios",

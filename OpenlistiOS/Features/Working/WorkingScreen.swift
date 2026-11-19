@@ -13,14 +13,18 @@ struct WorkingScreen: View {
     @Environment(PhoneEnvironment.self) private var env
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 10)) { _ in
-            WorkingPage(now: env.now)
+        let clock = env.clock
+        GeometryReader { viewport in
+            TimelineView(.periodic(from: .now, by: 10)) { _ in
+                WorkingPage(now: clock.now, isShort: viewport.size.height < 560)
+            }
         }
     }
 }
 
 private struct WorkingPage: View {
     let now: Date
+    let isShort: Bool
     @Environment(PhoneEnvironment.self) private var env
     @Environment(\.phoneLibrary) private var library
     @Environment(\.olStyle) private var style
@@ -30,7 +34,8 @@ private struct WorkingPage: View {
     var body: some View {
         let navigator = env.navigator
         let work = PhoneWork(env: env, now: now)
-        OLScreen(identifier: PhoneRoute.working.screenIdentifier, scrolls: dynamicTypeSize.isAccessibilitySize) {
+        let scrolls = isShort || dynamicTypeSize.isAccessibilitySize
+        OLScreen(identifier: PhoneRoute.working.screenIdentifier, scrolls: scrolls) {
             OLTopBar {
                 OLIconButton("chevron.down", label: "Close", kind: .bare, iconSize: 22) { navigator.dismissCover() }
                     .keyboardShortcut(.cancelAction)
@@ -48,7 +53,7 @@ private struct WorkingPage: View {
         } content: {
             if let task = work.task {
                 session(task, work: work)
-                    .frame(maxHeight: dynamicTypeSize.isAccessibilitySize ? nil : .infinity)
+                    .frame(maxHeight: scrolls ? nil : .infinity)
                 if let next = next(after: work) { nextCard(next) }
             } else {
                 OLEmptyState(symbol: "timer", title: "Nothing on now",

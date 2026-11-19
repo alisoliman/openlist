@@ -3,24 +3,26 @@
 # UI tests on a throwaway iOS 27 simulator, then checks the built bundles. No
 # Apple account, signing or iCloud: the build is local-only
 # (ICLOUD_CONTAINER_ENVIRONMENT is empty) and tests run in review sessions.
-#   OPENLIST_IOS_DEVICE_TYPE   simulator device type (default iPhone 18 Pro)
+#   OPENLIST_IOS_DEVICE_TYPE   simulator device type (default iPhone 18 Pro or iPad Pro)
 #   OPENLIST_IOS_DERIVED_DATA  DerivedData directory (default build/ios/DerivedData)
 #   OPENLIST_SPM_DIR           shared SwiftPM checkouts (default: inside DerivedData)
 #   OPENLIST_IOS_UDID          existing simulator to test on (default: a throwaway one)
-#   OPENLIST_IOS_PART          run one part of the tests, 1/3, 2/3 or 3/3, as CI's three
-#                              ios jobs do (default: all of them)
+#   OPENLIST_IOS_PART          test partition: 1/3, 2/3, 3/3 or ipad (default: all iPhone tests)
 set -euo pipefail
 cd "$(dirname "$0")/.."
 # The UI test classes of the first two parts, about a third of the suite's
 # time each, the unit tests going with the first. The third part runs every
-# other UI test class, so a new class always runs somewhere.
+# other iPhone UI test class, so a new class always runs somewhere.
 PART1=(ScreensUITests TaskSwipeUITests ListAppearanceUITests LaunchTests)
 PART2=(InteractionUITests PaperAppearanceUITests CaptureTriageUITests TaskDueMenuUITests TaskDetailContextUITests ShellUITests
     ListsTasksUITests)
+PART4=(IPadShellUITests)
 SELECT=()
 BUNDLES="OpenlistiOSTests OpenlistiOSUITests"
+DEFAULT_DEVICE_TYPE=com.apple.CoreSimulator.SimDeviceType.iPhone-18-Pro
 case "${OPENLIST_IOS_PART:-}" in
-    "") ;;
+    "")
+        for class in "${PART4[@]}"; do SELECT+=("-skip-testing:OpenlistiOSUITests/$class"); done ;;
     1/3)
         SELECT=(-only-testing:OpenlistiOSTests)
         for class in "${PART1[@]}"; do SELECT+=("-only-testing:OpenlistiOSUITests/$class"); done ;;
@@ -30,11 +32,15 @@ case "${OPENLIST_IOS_PART:-}" in
     3/3)
         BUNDLES=OpenlistiOSUITests
         SELECT=(-only-testing:OpenlistiOSUITests)
-        for class in "${PART1[@]}" "${PART2[@]}"; do SELECT+=("-skip-testing:OpenlistiOSUITests/$class"); done ;;
-    *) echo "OPENLIST_IOS_PART must be 1/3, 2/3 or 3/3" >&2; exit 1 ;;
+        for class in "${PART1[@]}" "${PART2[@]}" "${PART4[@]}"; do SELECT+=("-skip-testing:OpenlistiOSUITests/$class"); done ;;
+    ipad)
+        BUNDLES=OpenlistiOSUITests
+        for class in "${PART4[@]}"; do SELECT+=("-only-testing:OpenlistiOSUITests/$class"); done
+        DEFAULT_DEVICE_TYPE=com.apple.CoreSimulator.SimDeviceType.iPad-Pro-11-inch-M5-12GB ;;
+    *) echo "OPENLIST_IOS_PART must be 1/3, 2/3, 3/3 or ipad" >&2; exit 1 ;;
 esac
 RUNTIME=com.apple.CoreSimulator.SimRuntime.iOS-27-0
-DEVICE_TYPE=${OPENLIST_IOS_DEVICE_TYPE:-com.apple.CoreSimulator.SimDeviceType.iPhone-18-Pro}
+DEVICE_TYPE=${OPENLIST_IOS_DEVICE_TYPE:-$DEFAULT_DEVICE_TYPE}
 OUT=build/ios
 DERIVED=${OPENLIST_IOS_DERIVED_DATA:-$OUT/DerivedData}
 xcrun simctl list runtimes | grep -q "$RUNTIME" || {
@@ -75,9 +81,8 @@ XCTESTRUN=$(ls -t "$DERIVED"/Build/Products/*.xctestrun | sed -n 1p)
 # bundle has what a failure needs, so no sysdiagnose (ten minutes a failure).
 SECONDS=0
 # Each test's result also goes to the output as it lands, so a run that
-# stops short still says how far it got. (Bash 3.2's nounset rejects an
-# empty array's expansion, hence the guard.)
-xcodebuild -xctestrun "$XCTESTRUN" -destination "id=$UDID" ${SELECT[@]+"${SELECT[@]}"} \
+# stops short still says how far it got.
+xcodebuild -xctestrun "$XCTESTRUN" -destination "id=$UDID" "${SELECT[@]}" \
     -parallel-testing-enabled NO -retry-tests-on-failure -test-iterations 2 \
     -collect-test-diagnostics never \
     -resultBundlePath "$OUT/Tests.xcresult" test-without-building 2>&1 | tee "$OUT/test.log" \
@@ -122,9 +127,16 @@ info = plistlib.loads((app / 'Info.plist').read_bytes())
 require(info['CFBundleIdentifier'] == 'solimanali.openlist.ios', 'app identifier')
 require(info.get('CFBundleDisplayName') == 'Openlist', 'display name')
 require(info.get('MinimumOSVersion') == '27.0', 'iOS 27 deployment target')
-require(info.get('UIDeviceFamily') == [1], 'iPhone only')
+require(info.get('UIDeviceFamily') == [1, 2], 'iPhone and iPad device families')
 orientations = info.get('UISupportedInterfaceOrientations~iphone', info.get('UISupportedInterfaceOrientations'))
-require(orientations == ['UIInterfaceOrientationPortrait'], 'portrait only')
+require(orientations == ['UIInterfaceOrientationPortrait'], 'iPhone portrait orientation')
+require(set(info.get('UISupportedInterfaceOrientations~ipad', [])) == {
+    'UIInterfaceOrientationPortrait', 'UIInterfaceOrientationPortraitUpsideDown',
+    'UIInterfaceOrientationLandscapeLeft', 'UIInterfaceOrientationLandscapeRight',
+}, 'iPad supports all orientations')
+require(not info.get('UIRequiresFullScreen', False), 'iPad supports window resizing')
+require(info.get('UIApplicationSceneManifest', {}).get('UIApplicationSupportsMultipleScenes') is False,
+        'the library navigator and undo manager belong to one window')
 require('remote-notification' in info.get('UIBackgroundModes', []), 'CloudKit pushes need remote-notification')
 require(info.get('NSSupportsLiveActivities') is True, 'Live Activities')
 require(bool(info.get('NSCalendarsFullAccessUsageDescription')), 'calendar usage description')
@@ -137,15 +149,19 @@ require('InstrumentSerif-Regular.ttf' in info.get('UIAppFonts', []) and (app / '
 require((app / 'PrivacyInfo.xcprivacy').is_file(), 'privacy manifest')
 icon = info.get('CFBundleIcons', {}).get('CFBundlePrimaryIcon', {}).get('CFBundleIconName')
 require((app / 'Assets.car').is_file() and icon == 'Openlist', 'app icon')
+ipad_icon = info.get('CFBundleIcons~ipad', {}).get('CFBundlePrimaryIcon', {}).get('CFBundleIconName')
+require(ipad_icon == 'Openlist', 'iPad app icon')
 
 widget = app / 'PlugIns/OpenlistiOSWidget.appex'
 winfo = plistlib.loads((widget / 'Info.plist').read_bytes())
 require(winfo['CFBundleIdentifier'] == 'solimanali.openlist.ios.widget', 'widget identifier')
+require(winfo.get('UIDeviceFamily') == [1, 2], 'widget iPhone and iPad device families')
 require(winfo['NSExtension']['NSExtensionPointIdentifier'] == 'com.apple.widgetkit-extension', 'WidgetKit extension')
 require((widget / 'InstrumentSerif-Regular.ttf').is_file() and (widget / 'PrivacyInfo.xcprivacy').is_file(), 'widget resources')
 share = app / 'PlugIns/OpenlistiOSShare.appex'
 sinfo = plistlib.loads((share / 'Info.plist').read_bytes())
 require(sinfo['CFBundleIdentifier'] == 'solimanali.openlist.ios.share', 'share extension identifier')
+require(sinfo.get('UIDeviceFamily') == [1, 2], 'share extension iPhone and iPad device families')
 require(sinfo['NSExtension']['NSExtensionPointIdentifier'] == 'com.apple.share-services', 'Share sheet extension')
 require(sinfo['NSExtension']['NSExtensionPrincipalClass'] == 'OpenlistiOSShare.ShareViewController', 'share extension entry point')
 rule = sinfo['NSExtension']['NSExtensionAttributes']['NSExtensionActivationRule']
@@ -156,5 +172,5 @@ require((share / 'PrivacyInfo.xcprivacy').is_file(), 'share extension privacy ma
 require(sorted(p.name for p in (app / 'PlugIns').glob('*.appex')) == ['OpenlistiOSShare.appex', 'OpenlistiOSWidget.appex'],
         'only the widget and the share extension are embedded')
 again = f' ({len(retried)} on a second run)' if retried else ''
-print(f'{passed} iOS tests passed{again}; verified the iPhone-only iOS 27 app, its widget and its share extension')
+print(f'{passed} iOS tests passed{again}. Verified the app, widget and share extension for iPhone and iPad.')
 PY

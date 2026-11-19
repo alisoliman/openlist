@@ -87,9 +87,13 @@ private struct TodayPage: View {
                          identifierPrefix: "today", hasHaptics: dynamicTypeSize.isAccessibilitySize)
                 .padding(.top, 12)
             if !dynamicTypeSize.isAccessibilitySize {
-                OLWeekStrip(days: OLWeekStrip.week(containing: day, calendar: calendar), selection: selection,
-                            today: now, calendar: calendar)
-                    .padding(.top, 4)
+                ViewThatFits(in: .horizontal) {
+                    OLWeekStrip(days: OLWeekStrip.week(containing: day, calendar: calendar), selection: selection,
+                                today: now, calendar: calendar)
+                        .frame(minWidth: OLWeekStrip.minimumWidth)
+                        .padding(.top, 4)
+                    Color.clear.frame(height: 0).accessibilityHidden(true)
+                }
             }
             if let work, let schedule {
                 // Today's meetings can still be shown on a clear day.

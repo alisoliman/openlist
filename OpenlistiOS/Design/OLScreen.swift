@@ -11,11 +11,11 @@ import SwiftUI
 /// under the status bar, and 40 pt below the last card, above the dock on a
 /// tab's page (`olDockRoom`) or else the screen's edge.
 ///
-/// The system navigation bar is hidden: the design draws its top bar in the
-/// content, where it scrolls with the page. Swiping back still works
-/// (`Platform/SwipeBack.swift`), and so does VoiceOver's escape gesture: it
-/// goes back, or closes the sheet or cover the screen is in, unless the
-/// screen says what escape does (`escape`).
+/// The design draws its top bar in the content, where it scrolls with the
+/// page. The iPad workspace also uses the system bar for its sidebar toggle.
+/// Swiping back uses `Platform/SwipeBack.swift`. VoiceOver's escape gesture
+/// goes back or closes the sheet or cover unless the screen supplies its own
+/// `escape` action.
 struct OLScreen<TopBar: View, Content: View>: View {
     var identifier: String?
     var scrolls = true
@@ -25,6 +25,7 @@ struct OLScreen<TopBar: View, Content: View>: View {
     @Environment(\.olDockRoom) private var dockRoom
     @Environment(\.olScrollToTop) private var scrollToTop
     @Environment(\.olStyle) private var style
+    @Environment(\.showsWorkspaceToolbar) private var showsWorkspaceToolbar
     @Environment(\.isPresented) private var isPresented
     @Environment(\.dismiss) private var dismiss
 
@@ -58,7 +59,7 @@ struct OLScreen<TopBar: View, Content: View>: View {
         }
         .safeAreaPadding(.bottom, dockRoom)
         .background(OL.canvas.ignoresSafeArea())
-        .toolbar(.hidden, for: .navigationBar)
+        .toolbar(showsWorkspaceToolbar ? .visible : .hidden, for: .navigationBar)
         .modifier(ScreenIdentifier(identifier: identifier))
         .accessibilityAction(.escape) {
             if let escape { escape() } else if isPresented { dismiss() }
@@ -75,6 +76,8 @@ struct OLScreen<TopBar: View, Content: View>: View {
         .foregroundStyle(OL.ink)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, OLMetrics.gutter)
+        .frame(maxWidth: OLMetrics.paperWidth)
+        .frame(maxWidth: .infinity)
         .padding(.top, OLMetrics.screenTop)
         .padding(.bottom, OLMetrics.screenBottom)
     }
@@ -89,6 +92,8 @@ extension OLScreen where TopBar == EmptyView {
 /// The design's layout constants (design-system.css), in points.
 enum OLMetrics {
     static let gutter: CGFloat = 20
+    /// The maximum width of the reading column, including its gutters.
+    static let paperWidth: CGFloat = 760
     /// Between the status bar and the top bar: the mockup's 54 less the
     /// status bar it drew.
     static let screenTop: CGFloat = 6

@@ -72,7 +72,7 @@ struct SettingsScreen: View {
                         .contentShape(.rect)
                     }
                     .buttonStyle(OLRowPressStyle())
-                    .accessibilityHint("On this iPhone only. Existing drafts always stay for review.")
+                    .accessibilityHint("Applies on this device. Existing drafts always stay for review.")
                     .accessibilityIdentifier("settings.afterVoiceCapture")
                 }
                 .olCard()
@@ -170,7 +170,7 @@ struct SettingsScreen: View {
             Button("Done", role: .cancel) {}
         } message: {
             Text(env.sync.state.isEnabled ? env.sync.state.detail
-                 : env.sync.state.unavailableReason ?? "iCloud sync is off on this iPhone.")
+                 : env.sync.state.unavailableReason ?? "iCloud sync is off on this device.")
         }
         .task {
             env.store.refreshAllReminders()
