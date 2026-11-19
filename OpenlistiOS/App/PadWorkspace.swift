@@ -70,7 +70,13 @@ private struct PadSidebar: View {
                         .tag(root(for: tab))
                         .accessibilityIdentifier("sidebar.\(tab.rawValue)")
                 }
-                Button { navigator.show(.find("")) } label: {
+                Button {
+                    if navigator.tab == .lists && navigator.sheet == nil && navigator.cover == nil {
+                        navigator.setPath([.find("")], for: .lists)
+                    } else {
+                        navigator.show(.find(""))
+                    }
+                } label: {
                     Label("Find", systemImage: "magnifyingglass")
                 }
                 .buttonStyle(.plain)

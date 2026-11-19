@@ -1,0 +1,36 @@
+name: Temporary iPad find-direct-path check
+on:
+  push:
+    branches: [codex/temporary-ipad-find-direct-path]
+permissions:
+  contents: read
+jobs:
+  ipad:
+    runs-on: xcode-27
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90
+        with:
+          xcode-version: latest
+      - name: Build and run iPad shell tests
+        run: |
+          set -euo pipefail
+          UDID=$(xcrun simctl create 'Openlist iPad find direct path' com.apple.CoreSimulator.SimDeviceType.iPad-Pro-11-inch-M5-12GB com.apple.CoreSimulator.SimRuntime.iOS-27-0)
+          trap 'xcrun simctl shutdown "$UDID" >/dev/null 2>&1 || true; xcrun simctl delete "$UDID" >/dev/null 2>&1 || true' EXIT
+          xcodebuild -project openlist.xcodeproj -scheme OpenlistiOS -configuration Debug -destination "id=$UDID" -derivedDataPath build/stack-check CODE_SIGNING_ALLOWED=NO ICLOUD_CONTAINER_ENVIRONMENT= build-for-testing > stack-build.log 2>&1 || { tail -120 stack-build.log; exit 1; }
+          xcrun simctl bootstatus "$UDID" -b
+          XCTESTRUN=$(ls -t build/stack-check/Build/Products/*.xctestrun | head -1)
+          set +e
+          xcodebuild -xctestrun "$XCTESTRUN" -destination "id=$UDID" -parallel-testing-enabled NO -collect-test-diagnostics never -only-testing:OpenlistiOSUITests/IPadShellUITests/testSidebarAndDetailAreBothUsableInLandscape -only-testing:OpenlistiOSUITests/IPadShellUITests/testSidebarFindFromTodayAndInbox -resultBundlePath build/StackCheck.xcresult test-without-building > stack-test.log 2>&1
+          STATUS=$?
+          tail -160 stack-test.log
+          exit "$STATUS"
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: ipad-find-direct-path-logs
+          path: |
+            stack-build.log
+            stack-test.log
