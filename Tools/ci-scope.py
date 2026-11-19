@@ -9,7 +9,7 @@ Prints GitHub step outputs, then why:
   suites    the check suites to run; none listed means all of them
   release   true when the Mac app's release build is worth checking
   ios       true when the iOS jobs run
-  parts     which of the three iOS parts run, as JSON
+  parts     which iOS parts run, as JSON (three iPhone parts and part 4 for iPad)
 
 - Documentation needs nothing.
 - CI's own definition, the project, the packages, Config/, Shared/ and every
@@ -45,6 +45,7 @@ UNIT_TESTS = re.compile(r'^OpenlistiOSTests/')
 UI_TESTS = re.compile(r'^OpenlistiOSUITests/(\w+)\.swift$')
 # Check suites and what only they read: no release build for these.
 CHECKS_ONLY = re.compile(r'^Tools/(run-[a-z-]+-checks\.sh$|\w+Checks/)')
+IOS_PARTS = {1, 2, 3, 4}
 
 ROOTS = r'(?:openlist|Shared|SharediOS|OpenlistiOS\w*|OpenlistWidget|OpenlistMCPHelper|MCPTransport|Tools|Config)'
 PATH_TOKEN = re.compile(r'(?<![\w$/.-])(' + ROOTS + r'(?:/[\w+./*-]*)?)')
@@ -149,7 +150,7 @@ def ui_test_part(path):
     if re.search(r'^(extension|func|struct|enum|let|var)\b', (ROOT / path).read_text(), re.M):
         return None
     runner = (ROOT / 'Tools/run-ios-checks.sh').read_text()
-    for part in (1, 2):
+    for part in (1, 2, 4):
         listed = re.search(rf'^PART{part}=\(([^)]*)\)', runner, re.M).group(1).split()
         if match.group(1) in listed:
             return part
@@ -167,18 +168,18 @@ def scope(files):
         if CI.search(path) or SHARED.search(path) or any(names(s, path) for s in shared):
             mac.append(path)
             release = True
-            parts |= {1, 2, 3}
+            parts |= IOS_PARTS
             reasons.append(f'{path}: shared or CI')
         elif IOS_APP.search(path):
             ios_suites = True
-            parts |= {1, 2, 3}
+            parts |= IOS_PARTS
             reasons.append(f'{path}: iOS')
         elif UNIT_TESTS.search(path):
             parts.add(1)
             reasons.append(f'{path}: iOS unit tests')
         elif path.startswith('OpenlistiOSUITests/') or path == 'Tools/run-ios-checks.sh':
             part = ui_test_part(path)
-            parts |= {part} if part else {1, 2, 3}
+            parts |= {part} if part else IOS_PARTS
             reasons.append(f'{path}: iOS UI tests, part {part or "all"}')
         else:
             mac.append(path)

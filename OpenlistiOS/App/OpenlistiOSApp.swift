@@ -6,7 +6,7 @@
 import SwiftData
 import SwiftUI
 
-/// The iPhone app. It opens the same store, with the same schema and
+/// The iPhone and iPad app. It opens the same store, with the same schema and
 /// CloudKit container, the Mac does, in the same order: the sync monitor
 /// first, so early CloudKit setup errors are seen; then the container; then
 /// the environment, which the delegate bootstraps at launch. A library that

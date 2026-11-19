@@ -80,9 +80,8 @@ jobs:
           name: build-log
           path: build/release/build.log
   ios:
-    # The unit and UI tests in three parts, each on its own runner and
-    # simulator, about a third of the UI suite's time each.
-    name: ios (${{ matrix.part }}/3)
+    # Three iPhone partitions and one iPad UI partition.
+    name: ios (${{ matrix.part == 4 && 'iPad' || format('{0}/3', matrix.part) }})
     needs: scope
     if: needs.scope.outputs.ios == 'true'
     runs-on: xcode-27
@@ -119,7 +118,7 @@ jobs:
       - name: iOS build, unit and UI tests
         run: ./Tools/run-ios-checks.sh
         env:
-          OPENLIST_IOS_PART: ${{ matrix.part }}/3
+          OPENLIST_IOS_PART: ${{ matrix.part == 4 && 'ipad' || format('{0}/3', matrix.part) }}
       # The logs apart from the result bundle, which a job stopped mid-test
       # leaves half written and unreadable to the upload.
       - name: iOS logs

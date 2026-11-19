@@ -158,6 +158,7 @@ struct OLActionDock<Content: View>: View {
             .padding(.horizontal, OLMetrics.gutter)
             .padding(.bottom, dropsLikeTheDock ? 0 : 8)
             .offset(y: dropsLikeTheDock ? dockDrop : 0)
+            .frame(maxWidth: OLMetrics.paperWidth)
             .frame(maxWidth: .infinity)
     }
 }
@@ -197,6 +198,7 @@ struct OLBulkBar: View {
         .frame(height: OLMetrics.dockHeight)
         .background { Capsule(style: .continuous).fill(OL.ink).olShadow(.float) }
         .padding(.horizontal, OLMetrics.gutter)
+        .frame(maxWidth: OLMetrics.paperWidth)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Actions for selected tasks")
     }

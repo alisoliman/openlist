@@ -5,6 +5,10 @@
     <key>OpenlistDevelopment</key><true/>
     <key>ITSAppUsesNonExemptEncryption</key>
     <false/>
+    <key>UIApplicationSceneManifest</key>
+    <dict>
+        <key>UIApplicationSupportsMultipleScenes</key><false/>
+    </dict>
     <key>UIAppFonts</key>
     <array><string>InstrumentSerif-Regular.ttf</string></array>
     <key>UTExportedTypeDeclarations</key>

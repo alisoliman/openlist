@@ -6,6 +6,10 @@
     <string>$(ICLOUD_CONTAINER_ENVIRONMENT)</string>
     <key>ITSAppUsesNonExemptEncryption</key>
     <false/>
+    <key>UIApplicationSceneManifest</key>
+    <dict>
+        <key>UIApplicationSupportsMultipleScenes</key><false/>
+    </dict>
     <key>UIAppFonts</key>
     <array><string>InstrumentSerif-Regular.ttf</string></array>
     <key>UIBackgroundModes</key>

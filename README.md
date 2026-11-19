@@ -13,11 +13,12 @@ and plan your day with a calendar and desktop widgets.
 - **Quick capture:** a global shortcut, menu bar access, natural-language
   dates such as “tomorrow at 6pm,” `@list` and `#label` with suggestions, notes,
   pasted lists as a task a line, Services ▸ Add to Openlist on the Mac and the
-  Share sheet on iPhone.
+  Share sheet on iPhone and iPad.
 - **Voice capture:** on-device dictation and Apple Intelligence turn spoken
   requests into tasks. Review them first, or choose automatic saving per device.
-  Hold the iPhone dock’s **+**, click the Mac toolbar mic, or enable the Mac’s
-  configurable global voice shortcut (initially **⌃⇧⌥Space**, off by default).
+  Hold the dock’s **+** or click the iPad or Mac toolbar mic. On the Mac, you
+  can also enable the configurable global voice shortcut (initially **⌃⇧⌥Space**,
+  off by default).
 - **Daily organization:** Inbox triage that suggests where each task goes,
   files and dates it in one step and snoozes it until a day; Today, search, and
   a calendar with time blocking and work sessions.
@@ -26,8 +27,9 @@ and plan your day with a calendar and desktop widgets.
   export, library backups, and restorable Trash.
 - **AI integration:** an optional local MCP server for compatible clients.
 
-An iPhone companion is included in the project and syncs through the same iCloud
-container.
+The iPhone and iPad app syncs through the same iCloud container. On iPad,
+Openlist supports portrait and landscape in a resizable window, with a sidebar
+at wider sizes and a bottom dock at narrow sizes.
 
 ## Download
 
@@ -62,8 +64,9 @@ Run the project checks:
 ./Tools/check.sh
 ```
 
-For the iPhone companion, use the **OpenlistiOS** scheme or run
-`./Tools/run-ios-checks.sh` to build and test on an iOS 27 simulator.
+For iPhone and iPad, use the **OpenlistiOS** scheme with an iOS 27 simulator.
+Run `./Tools/run-ios-checks.sh` for iPhone tests or
+`OPENLIST_IOS_PART=ipad ./Tools/run-ios-checks.sh` for iPad tests.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for signing, widget development, iCloud
 setup, and release builds.

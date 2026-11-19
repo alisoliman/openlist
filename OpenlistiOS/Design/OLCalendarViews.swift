@@ -16,6 +16,9 @@ struct OLWeekStrip: View {
     var calendar: Calendar = .current
     @Environment(\.olStyle) private var style
 
+    private static let daySpacing: CGFloat = 4
+    static let minimumWidth: CGFloat = 7 * 44 + 6 * daySpacing
+
     /// The week holding `date`, from `calendar.firstWeekday`.
     static func week(containing date: Date, calendar: Calendar) -> [Date] {
         let day = calendar.startOfDay(for: date)
@@ -25,7 +28,7 @@ struct OLWeekStrip: View {
     }
 
     var body: some View {
-        HStack(spacing: 4) {
+        HStack(spacing: Self.daySpacing) {
             ForEach(days, id: \.self) { day in
                 dayButton(day)
             }

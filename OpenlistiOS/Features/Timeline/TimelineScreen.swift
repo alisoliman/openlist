@@ -18,30 +18,37 @@ import UniformTypeIdentifiers
 struct TimelineScreen: View {
     var forWork = false
     @Environment(PhoneEnvironment.self) private var env
-    @Environment(\.phoneLibrary) private var library
 
     var body: some View {
-        TimelineView(.periodic(from: .now, by: 20)) { _ in
-            TimelinePage(now: env.now, forWork: forWork)
+        let clock = env.clock
+        GeometryReader { viewport in
+            TimelineView(.periodic(from: .now, by: 20)) { _ in
+                TimelinePage(now: clock.now, forWork: forWork, viewport: viewport.size)
+            }
         }
     }
 }
 
 private struct TimelinePage: View {
     let now: Date
-    var forWork = false
+    let forWork: Bool
+    let viewport: CGSize
     @Environment(PhoneEnvironment.self) private var env
     @Environment(\.phoneLibrary) private var library
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.olDockRoom) private var dockRoom
     @State private var planning = TimelinePlanning()
     /// The day's meetings, read again only when the calendars reload.
     @State private var meetings = WidgetSnapshotSources.MeetingCache()
 
     var body: some View {
-        // At accessibility sizes the page scrolls, and the card is a fixed
-        // window onto the day, rather than a sliver under the header. Work
-        // is arranged as Today, so neither nests a tall scroller in its page.
-        let fills = !typeSize.isAccessibilitySize
+        // Short windows and large text need a scrolling page so the header
+        // leaves enough room to read and interact with the timeline.
+        let height = viewport.height - dockRoom
+        let fills = !typeSize.isAccessibilitySize && height >= 500
+        let timelineHeight = min(560, max(240, height - 70))
+        let showsWeek = !typeSize.isAccessibilitySize
+            && viewport.width - 2 * OLMetrics.gutter >= OLWeekStrip.minimumWidth
         let navigator = env.navigator
         let calendar = env.settings.calendar
         let today = calendar.startOfDay(for: now)
@@ -49,7 +56,7 @@ private struct TimelinePage: View {
         let schedule = TimelineSchedule(env: env, library: library, day: day, now: now, meetings: meetings)
         OLScreen(identifier: forWork ? PhoneRoute.work.screenIdentifier : PhoneRoute.timeline.screenIdentifier, scrolls: !fills) {
             OLTopBar {
-                if fills || forWork {
+                if showsWeek || forWork {
                     OLEyebrow(OLFormat.eyebrowDate(day, calendar: calendar))
                 }
             } trailing: {
@@ -74,7 +81,7 @@ private struct TimelinePage: View {
             if !forWork {
                 let selection = Binding(get: { day }, set: { navigator.selectDay($0, now: now, calendar: calendar) })
                 Group {
-                    if fills {
+                    if showsWeek {
                         OLWeekStrip(days: OLWeekStrip.week(containing: day, calendar: calendar),
                                     selection: selection, today: now, calendar: calendar)
                     } else {
@@ -93,7 +100,7 @@ private struct TimelinePage: View {
                     PlanRow(tasks: schedule.toPlan, planning: planning, canFit: day == today)
                 }
                 TimelineCard(schedule: schedule, day: day, now: now, planning: planning) { open($0) }
-                    .frame(height: fills ? nil : 560)
+                    .frame(height: fills ? nil : timelineHeight)
                     .frame(maxHeight: fills ? .infinity : nil)
             }
             .frame(maxHeight: fills ? .infinity : nil, alignment: .top)

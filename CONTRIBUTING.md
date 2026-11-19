@@ -127,14 +127,15 @@ Release-verifier regressions run through the script's own shebang, macOS's
 explicitly fail-closed: do not rely on `set -e` to reject metadata mismatches,
 especially when a `[[ ... ]]` condition contains command substitution.
 
-### iPhone companion
+### iPhone and iPad
 
 The iOS 27 app `OpenlistiOS`, its widget extension `OpenlistiOSWidget`, its
 share extension `OpenlistiOSShare` and their test bundles (`OpenlistiOSTests`,
 Swift Testing, hosted by the app; `OpenlistiOSUITests`, XCUITest) share the Mac
 project. `python3 Tools/add-ios-targets.py` adds any of these targets a project
-is missing. The app is iPhone-only
-and portrait, and syncs with the Mac through the same CloudKit container.
+is missing. The app syncs with the Mac through the same CloudKit container.
+It runs in portrait on iPhone. On iPad, one resizable Openlist window supports
+all four orientations and owns its navigation and undo history.
 
 ```sh
 ./Tools/run-ios-core-checks.sh   # part of check.sh: type-checks both iOS targets, no simulator
@@ -143,9 +144,11 @@ and portrait, and syncs with the Mac through the same CloudKit container.
 
 `run-ios-checks.sh` needs the iOS 27 simulator runtime
 (`xcodebuild -downloadPlatform iOS`). It creates an iPhone 18 Pro simulator
-(`OPENLIST_IOS_DEVICE_TYPE` picks another), deletes it afterwards, verifies the
-built bundles and leaves its logs and `Tests.xcresult` in `build/ios`. CI runs it
-in three `ios` jobs, each a part of the tests (`OPENLIST_IOS_PART=1/3` to `3/3`).
+by default. Set `OPENLIST_IOS_PART=ipad` to exercise the iPad shell on an
+11-inch iPad Pro, or set `OPENLIST_IOS_DEVICE_TYPE` to pick another model.
+The script deletes its simulator afterwards, verifies the built bundles and
+leaves its logs and `Tests.xcresult` in `build/ios`. CI runs three iPhone
+partitions (`OPENLIST_IOS_PART=1/3` to `3/3`) and one iPad partition.
 It builds with `CODE_SIGNING_ALLOWED=NO` and an empty
 `ICLOUD_CONTAINER_ENVIRONMENT`, so the app runs local-only.
 
@@ -158,7 +161,7 @@ runs it. `check` runs only the suites whose scripts name a changed file (all of
 them when no suite names it). `./Tools/check.sh <suite>...` runs named suites
 locally, and a manual run of the CI workflow runs everything.
 
-The iPhone companion compiles the same Model, Store and service sources as
+The iOS app compiles the same Model, Store and service sources as
 the Mac, listed in `Tools/iOS/shared-sources.txt`; its own replacements for
 Mac-only pieces live in `OpenlistiOS/Platform/`. To share another file, add a
 line there and run `python3 Tools/add-ios-targets.py`, which writes the list

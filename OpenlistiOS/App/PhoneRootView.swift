@@ -7,9 +7,8 @@ import SwiftData
 import SwiftUI
 import UIKit
 
-/// The shell every screen sits in: a navigation stack per tab, the floating
-/// dock, the tray, and the sheets and covers on top, over the live library.
-/// Where it all is is the scene's to keep (`PhoneNavigator.Place`).
+/// The shell over the live library. The dock and iPad sidebar share the
+/// scene's navigation, sheets and covers (`PhoneNavigator.Place`).
 struct PhoneRootView: View {
     var body: some View {
         PhoneLibraryHost { PhoneShell() }
@@ -21,7 +20,9 @@ private struct PhoneShell: View {
     @Environment(\.phoneLibrary) private var library
     @Environment(\.accessibilityReduceMotion) private var systemReducesMotion
     @Environment(\.undoManager) private var undoManager
+    @Environment(\.horizontalSizeClass) private var widthClass
     @State private var bottomSafeArea: CGFloat = 34
+    @State private var sidebarVisibility = NavigationSplitViewVisibility.all
     /// The keyboard is up: the dock goes behind it, as a tab bar does,
     /// rather than riding above it and taking the rows' room.
     @State private var isKeyboardUp = false
@@ -30,37 +31,17 @@ private struct PhoneShell: View {
     @SceneStorage("phone.place") private var savedPlace: Data?
 
     var body: some View {
-        let environment = env
-        @Bindable var navigator = environment.navigator
-        let showsDock = navigator.showsDock && !isKeyboardUp
-        TabView(selection: $navigator.tab) {
-            ForEach(PhoneTab.allCases) { tab in
-                Tab(tab.title, systemImage: tab.symbol, value: tab) {
-                    PhoneTabStack(tab: tab, env: environment)
-                        .toolbarVisibility(.hidden, for: .tabBar)
-                        // The dock's room, which the inset on the TabView below
-                        // doesn't pass to its tabs: a page's end scrolls clear of it.
-                        .environment(\.olDockRoom, showsDock ? OLMetrics.dockHeight - dockDrop : 0)
-                        .environment(\.olScrollToTop, navigator.scrollToTopRequests(for: tab))
-                }
+        @Bindable var navigator = env.navigator
+        Group {
+            if usesSidebar {
+                PadWorkspace(sidebarVisibility: $sidebarVisibility,
+                             trayBottom: trayLift(showsDock: false, screenBar: navigator.showsScreenBar && !isKeyboardUp))
+            } else {
+                dockWorkspace
             }
-        }
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            if showsDock {
-                DockHost()
-                    // The design's dock sits 28 pt above the screen's edge,
-                    // a little into the home indicator's safe area.
-                    .offset(y: dockDrop)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-            }
-        }
-        .animation(style.fading(.snappy(duration: 0.3)), value: showsDock)
-        .overlay(alignment: .bottom) {
-            TrayHost(announces: navigator.sheet == nil && navigator.cover == nil)
-                .padding(.bottom, trayLift(showsDock: showsDock, screenBar: navigator.showsScreenBar && !isKeyboardUp))
         }
         .overlay(alignment: .top) { PhoneNoticeBanner() }
-        .background { KeyboardShortcuts() }
+        .background { KeyboardShortcuts(usesSidebar: usesSidebar) }
         .background {
             // The home indicator's inset, never the keyboard's.
             GeometryReader { proxy in
@@ -109,6 +90,39 @@ private struct PhoneShell: View {
         .onChange(of: navigator.place) { _, place in savedPlace = try? JSONEncoder().encode(place) }
     }
 
+    private var usesSidebar: Bool {
+        UIDevice.current.userInterfaceIdiom == .pad && widthClass == .regular
+    }
+
+    private var dockWorkspace: some View {
+        @Bindable var navigator = env.navigator
+        let showsDock = navigator.showsDock && !isKeyboardUp
+        return TabView(selection: $navigator.tab) {
+            ForEach(PhoneTab.allCases) { tab in
+                Tab(tab.title, systemImage: tab.symbol, value: tab) {
+                    PhoneTabStack(tab: tab, env: env)
+                        .toolbarVisibility(.hidden, for: .tabBar)
+                        // The inset below doesn't pass through to the tab's scroll view.
+                        .environment(\.olDockRoom, showsDock ? OLMetrics.dockHeight - dockDrop : 0)
+                        .environment(\.olScrollToTop, navigator.scrollToTopRequests(for: tab))
+                }
+            }
+        }
+        .safeAreaInset(edge: .bottom, spacing: 0) {
+            if showsDock {
+                DockHost()
+                    // Let the dock sit 28 pt above the screen's edge.
+                    .offset(y: dockDrop)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            }
+        }
+        .animation(style.fading(.snappy(duration: 0.3)), value: showsDock)
+        .overlay(alignment: .bottom) {
+            TrayHost(announces: navigator.sheet == nil && navigator.cover == nil)
+                .padding(.bottom, trayLift(showsDock: showsDock, screenBar: navigator.showsScreenBar && !isKeyboardUp))
+        }
+    }
+
     private var style: OLStyle {
         OLStyle(reduceMotion: env.settings.reducesMotion || systemReducesMotion,
                 haptics: env.settings.playsHaptics,
@@ -117,7 +131,7 @@ private struct PhoneShell: View {
 
     /// Negative on phones without a home indicator: lift the dock to keep
     /// the same 28-point gap above the physical screen edge on every phone.
-    private var dockDrop: CGFloat { bottomSafeArea - OLMetrics.dockBottom }
+    private var dockDrop: CGFloat { usesSidebar ? 0 : bottomSafeArea - OLMetrics.dockBottom }
 
     /// 12 pt above the dock, or above a screen's own bottom bar, else 32 pt
     /// above the screen's edge.
@@ -133,16 +147,26 @@ struct PhoneTabStack: View {
     let tab: PhoneTab
     let env: PhoneEnvironment
     @Environment(\.olStyle) private var style
+    @Environment(\.showsWorkspaceToolbar) private var showsWorkspaceToolbar
 
     var body: some View {
         let navigator = env.navigator
         NavigationStack(path: Binding(get: { navigator.path(for: tab) }, set: { navigator.setPath($0, for: tab) })) {
-            root
-                .environment(env)
+            page(root)
                 .navigationDestination(for: PhoneRoute.self) { route in
-                    PhoneScreen(route: route).environment(env)
+                    page(PhoneScreen(route: route))
                 }
         }
+    }
+
+    private func page(_ content: some View) -> some View {
+        content
+            .environment(env)
+            .environment(\.showsWorkspaceToolbar, showsWorkspaceToolbar)
+            .navigationBarBackButtonHidden(showsWorkspaceToolbar)
+            .toolbar {
+                if showsWorkspaceToolbar { PadWorkspaceToolbar(navigator: env.navigator) }
+            }
     }
 
     @ViewBuilder private var root: some View {
@@ -238,6 +262,7 @@ private struct PhoneCoverContent: View {
 /// stand down while a sheet or cover is up, whose own keys (Esc, ⌘↩) work,
 /// and while a mode such as Select has the dock's place.
 private struct KeyboardShortcuts: View {
+    let usesSidebar: Bool
     @Environment(PhoneEnvironment.self) private var env
 
     var body: some View {
@@ -249,8 +274,10 @@ private struct KeyboardShortcuts: View {
             }
             Button("New task") { navigator.open(.capture(navigator.captureRequest)) }
                 .keyboardShortcut("n")
-            Button("Find") { navigator.open(.find("")) }
-                .keyboardShortcut("f")
+            Button("Find") {
+                if usesSidebar { navigator.show(.find("")) } else { navigator.open(.find("")) }
+            }
+            .keyboardShortcut("f")
             Button("Settings") { navigator.open(.settings) }
                 .keyboardShortcut(",")
         }
