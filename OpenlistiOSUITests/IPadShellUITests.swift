@@ -30,6 +30,46 @@ final class IPadShellUITests: XCTestCase {
         XCTAssertTrue(find.isSelected)
     }
 
+    func testFindFromListsCanBeRepeatedAndBackedOutOf() throws {
+        try requireIPad()
+        XCUIDevice.shared.orientation = .landscapeLeft
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let app = XCUIApplication.reviewSession()
+        app.launch()
+        app.waitForScreen("screen.today", timeout: 20)
+
+        sidebar("lists", in: app).tap()
+        app.waitForScreen("screen.lists")
+        let find = sidebar("find", in: app)
+        find.tap()
+        app.waitForScreen("screen.find")
+        XCTAssertTrue(find.isSelected)
+        find.tap()
+        app.waitForScreen("screen.find")
+        XCTAssertTrue(find.isSelected)
+        app.buttons["Back to Lists"].tap()
+        app.waitForScreen("screen.lists")
+
+        let list = listShortcut("Weekend in Kyoto", in: app)
+        list.tap()
+        app.waitForScreen("screen.list")
+        XCTAssertTrue(list.isSelected)
+        find.tap()
+        app.waitForScreen("screen.find")
+        XCTAssertTrue(find.isSelected)
+        app.buttons["Back to Lists"].tap()
+        app.waitForScreen("screen.lists")
+
+        sidebar("today", in: app).tap()
+        app.waitForScreen("screen.today")
+        sidebar("inbox", in: app).tap()
+        app.waitForScreen("screen.inbox")
+        find.tap()
+        app.waitForScreen("screen.find")
+        app.buttons["Back to Lists"].tap()
+        app.waitForScreen("screen.lists")
+    }
+
     func testSidebarAndDetailAreBothUsableInLandscape() throws {
         try requireIPad()
         XCUIDevice.shared.orientation = .landscapeLeft

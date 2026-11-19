@@ -6,16 +6,20 @@ struct PadWorkspace: View {
     @Binding var sidebarVisibility: NavigationSplitViewVisibility
     let trayBottom: CGFloat
     @Environment(PhoneEnvironment.self) private var env
+    @State private var detailStackID = UUID()
 
     var body: some View {
         let environment = env
         let navigator = environment.navigator
         let tab = navigator.tab
+        let stackID = detailStackID
+        let currentStackID = $detailStackID
         NavigationSplitView(columnVisibility: $sidebarVisibility) {
-            PadSidebar()
+            PadSidebar(detailStackID: $detailStackID)
                 .navigationSplitViewColumnWidth(min: 220, ideal: 258, max: 320)
         } detail: {
-            PhoneTabStack(tab: tab, env: environment)
+            PhoneTabStack(tab: tab, env: environment, acceptsPathChanges: { currentStackID.wrappedValue == stackID })
+                .id(stackID)
                 .id(tab)
                 .environment(\.showsWorkspaceToolbar, true)
                 .environment(\.olScrollToTop, navigator.scrollToTopRequests(for: tab))
@@ -57,6 +61,7 @@ struct PadWorkspaceToolbar: ToolbarContent {
 }
 
 private struct PadSidebar: View {
+    @Binding var detailStackID: UUID
     @Environment(PhoneEnvironment.self) private var env
     @Environment(\.phoneLibrary) private var library
 
@@ -70,7 +75,12 @@ private struct PadSidebar: View {
                         .tag(root(for: tab))
                         .accessibilityIdentifier("sidebar.\(tab.rawValue)")
                 }
-                Button { navigator.show(.find("")) } label: {
+                Button {
+                    // A same-tab arrival replaces the existing stack. Its last
+                    // binding write can otherwise clear the new Find route.
+                    if navigator.tab == .lists { detailStackID = UUID() }
+                    navigator.show(.find(""))
+                } label: {
                     Label("Find", systemImage: "magnifyingglass")
                 }
                 .buttonStyle(.plain)

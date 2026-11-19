@@ -147,12 +147,22 @@ private struct PhoneShell: View {
 struct PhoneTabStack: View {
     let tab: PhoneTab
     let env: PhoneEnvironment
+    let acceptsPathChanges: () -> Bool
     @Environment(\.olStyle) private var style
     @Environment(\.showsWorkspaceToolbar) private var showsWorkspaceToolbar
 
+    init(tab: PhoneTab, env: PhoneEnvironment, acceptsPathChanges: @escaping () -> Bool = { true }) {
+        self.tab = tab
+        self.env = env
+        self.acceptsPathChanges = acceptsPathChanges
+    }
+
     var body: some View {
         let navigator = env.navigator
-        NavigationStack(path: Binding(get: { navigator.path(for: tab) }, set: { navigator.setPath($0, for: tab) })) {
+        NavigationStack(path: Binding(get: { navigator.path(for: tab) }, set: {
+            guard acceptsPathChanges() else { return }
+            navigator.setPath($0, for: tab)
+        })) {
             page(root)
                 .navigationDestination(for: PhoneRoute.self) { route in
                     page(PhoneScreen(route: route))
