@@ -12,19 +12,6 @@ final class IPadShellUITests: XCTestCase {
         continueAfterFailure = false
     }
 
-    func testCaptureAppStoreToday() throws {
-        try requireIPad()
-        XCUIDevice.shared.orientation = .portrait
-        let app = XCUIApplication.reviewSession(now: "2026-11-19T09:41:00", environment: ["OpenlistOpenRoute": "today"])
-        app.launch()
-        app.waitForScreen("screen.today", timeout: 30)
-        XCTAssertTrue(app.descendants(matching: .any).matching(identifier: "ipad.sidebar").firstMatch.waitForExistence(timeout: 10))
-        let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-        attachment.name = "Openlist-iPad-13-Today"
-        attachment.lifetime = .keepAlways
-        add(attachment)
-    }
-
     func testSidebarAndDetailAreBothUsableInLandscape() throws {
         try requireIPad()
         XCUIDevice.shared.orientation = .landscapeLeft

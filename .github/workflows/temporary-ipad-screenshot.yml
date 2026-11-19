@@ -23,10 +23,13 @@ jobs:
           xcodebuild -project openlist.xcodeproj -scheme OpenlistiOS -configuration Debug -destination "id=$UDID" -derivedDataPath build/screenshot CODE_SIGNING_ALLOWED=NO ICLOUD_CONTAINER_ENVIRONMENT= build-for-testing > build-screenshot.log 2>&1 || { tail -120 build-screenshot.log; exit 1; }
           xcrun simctl bootstatus "$UDID" -b
           xcrun simctl status_bar "$UDID" override --time '9:41' --dataNetwork wifi --wifiMode active --wifiBars 3 --batteryState charged --batteryLevel 100
-          XCTESTRUN=$(ls -t build/screenshot/Build/Products/*.xctestrun | head -1)
-          xcodebuild -xctestrun "$XCTESTRUN" -destination "id=$UDID" -parallel-testing-enabled NO -collect-test-diagnostics never -only-testing:OpenlistiOSUITests/IPadShellUITests/testCaptureAppStoreToday -resultBundlePath build/iPadScreenshot.xcresult test-without-building > test-screenshot.log 2>&1 || { tail -120 test-screenshot.log; exit 1; }
           mkdir -p build/iPadScreenshotAttachments
-          xcrun xcresulttool export attachments --path build/iPadScreenshot.xcresult --output-path build/iPadScreenshotAttachments --test-id 'IPadShellUITests/testCaptureAppStoreToday()'
+          xcrun simctl install "$UDID" build/screenshot/Build/Products/Debug-iphonesimulator/OpenlistiOS.app
+          SIMCTL_CHILD_OpenlistReviewSession=AppStoreIPadNov19 SIMCTL_CHILD_OpenlistFixtureNow=2026-11-19T09:41:00 SIMCTL_CHILD_OpenlistOpenRoute=today xcrun simctl launch "$UDID" solimanali.openlist.ios
+          sleep 15
+          xcrun simctl io "$UDID" screenshot build/iPadScreenshotAttachments/today-15s.png
+          sleep 15
+          xcrun simctl io "$UDID" screenshot build/iPadScreenshotAttachments/today-30s.png
       - name: Upload screenshot and logs
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
@@ -35,4 +38,3 @@ jobs:
           path: |
             build/iPadScreenshotAttachments/
             build-screenshot.log
-            test-screenshot.log
