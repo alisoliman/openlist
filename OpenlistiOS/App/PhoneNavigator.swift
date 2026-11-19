@@ -297,7 +297,7 @@ final class PhoneNavigator {
             listsPath = [route]
         case .activity, .find:
             dismissModals()
-            tab = route.home
+            if tab != route.home { tab = route.home }
             setPath([route], for: tab)
         case let .triage(mode):
             // Whatever is up closes first, inside present(cover:).
