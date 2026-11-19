@@ -24,6 +24,9 @@ jobs:
           set +e
           xcodebuild -xctestrun "$XCTESTRUN" -destination "id=$UDID" -parallel-testing-enabled NO -collect-test-diagnostics never -only-testing:OpenlistiOSUITests/IPadShellUITests/testSidebarAndDetailAreBothUsableInLandscape -resultBundlePath build/FindDiagnostic.xcresult test-without-building > diagnostic-test.log 2>&1
           TEST_STATUS=$?
+          APP_DATA=$(xcrun simctl get_app_container "$UDID" solimanali.openlist.ios data)
+          cp "$APP_DATA/Documents/ipad-find-trace.log" diagnostic-file-trace.log 2>&1
+          cat diagnostic-file-trace.log
           xcrun simctl spawn "$UDID" log show --last 20m --style compact --predicate 'eventMessage CONTAINS "IPAD_FIND_TRACE"' > diagnostic-trace.log 2>&1
           cat diagnostic-trace.log
           tail -120 diagnostic-test.log
@@ -37,3 +40,4 @@ jobs:
             diagnostic-build.log
             diagnostic-test.log
             diagnostic-trace.log
+            diagnostic-file-trace.log

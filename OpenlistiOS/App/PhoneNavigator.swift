@@ -20,6 +20,16 @@ final class PhoneNavigator {
     func debugFindTrace(_ message: String) {
         guard ProcessInfo.processInfo.environment["OpenlistTraceIPadFind"] == "1" else { return }
         NSLog("IPAD_FIND_TRACE %@", message)
+        let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("ipad-find-trace.log")
+        let data = Data("\(message)\n".utf8)
+        if let handle = try? FileHandle(forWritingTo: url) {
+            defer { try? handle.close() }
+            _ = try? handle.seekToEnd()
+            try? handle.write(contentsOf: data)
+        } else {
+            try? data.write(to: url)
+        }
     }
     #endif
 
