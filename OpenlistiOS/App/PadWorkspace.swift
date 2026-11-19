@@ -63,14 +63,24 @@ private struct PadSidebar: View {
     var body: some View {
         let navigator = env.navigator
         let findSelected = selection == .find("")
-        return List(selection: Binding(get: { selection }, set: { if let route = $0 { navigator.show(route) } })) {
+        return List(selection: Binding(get: { selection }, set: { route in
+            #if DEBUG
+            navigator.debugFindTrace("sidebar.selection.set route=\(String(describing: route)) tab=\(navigator.tab) lists=\(navigator.listsPath)")
+            #endif
+            if let route { navigator.show(route) }
+        })) {
             Section {
                 ForEach(PhoneTab.allCases) { tab in
                     Label(tab.title, systemImage: tab.symbol)
                         .tag(root(for: tab))
                         .accessibilityIdentifier("sidebar.\(tab.rawValue)")
                 }
-                Button { navigator.show(.find("")) } label: {
+                Button {
+                    #if DEBUG
+                    navigator.debugFindTrace("sidebar.find.button tab=\(navigator.tab) lists=\(navigator.listsPath)")
+                    #endif
+                    navigator.show(.find(""))
+                } label: {
                     Label("Find", systemImage: "magnifyingglass")
                 }
                 .buttonStyle(.plain)

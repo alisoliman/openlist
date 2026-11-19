@@ -16,6 +16,13 @@ import SwiftUI
 final class PhoneNavigator {
     enum TodayMode: Hashable { case list, timeline }
 
+    #if DEBUG
+    func debugFindTrace(_ message: String) {
+        guard ProcessInfo.processInfo.environment["OpenlistTraceIPadFind"] == "1" else { return }
+        NSLog("IPAD_FIND_TRACE %@", message)
+    }
+    #endif
+
     var tab: PhoneTab = .today
     var todayPath: [PhoneRoute] = []
     var inboxPath: [PhoneRoute] = []
@@ -100,6 +107,9 @@ final class PhoneNavigator {
     }
 
     func setPath(_ path: [PhoneRoute], for tab: PhoneTab) {
+        #if DEBUG
+        debugFindTrace("navigator.setPath tab=\(tab) old=\(self.path(for: tab)) new=\(path)")
+        #endif
         switch tab {
         case .today: todayPath = path
         case .inbox: inboxPath = path
@@ -281,6 +291,10 @@ final class PhoneNavigator {
     /// asks: modals close and the screen opens in its home tab, a task on the
     /// page of its list (the Inbox's tab for the Inbox's tasks).
     func show(_ route: PhoneRoute, in listID: UUID? = nil) {
+        #if DEBUG
+        debugFindTrace("navigator.show enter route=\(route) tab=\(tab) lists=\(listsPath)")
+        defer { debugFindTrace("navigator.show exit route=\(route) tab=\(tab) lists=\(listsPath)") }
+        #endif
         switch route {
         case .taskDetail:
             dismissModals()

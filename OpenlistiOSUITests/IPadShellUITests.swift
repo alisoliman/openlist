@@ -35,7 +35,7 @@ final class IPadShellUITests: XCTestCase {
         XCUIDevice.shared.orientation = .landscapeLeft
         defer { XCUIDevice.shared.orientation = .portrait }
 
-        let app = XCUIApplication.reviewSession()
+        let app = XCUIApplication.reviewSession(environment: ["OpenlistTraceIPadFind": "1"])
         app.launch()
         app.waitForScreen("screen.today", timeout: 20)
 

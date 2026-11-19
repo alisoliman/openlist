@@ -152,7 +152,12 @@ struct PhoneTabStack: View {
 
     var body: some View {
         let navigator = env.navigator
-        NavigationStack(path: Binding(get: { navigator.path(for: tab) }, set: { navigator.setPath($0, for: tab) })) {
+        NavigationStack(path: Binding(get: { navigator.path(for: tab) }, set: {
+            #if DEBUG
+            navigator.debugFindTrace("stack.binding.set tab=\(tab) value=\($0)")
+            #endif
+            navigator.setPath($0, for: tab)
+        })) {
             page(root)
                 .navigationDestination(for: PhoneRoute.self) { route in
                     page(PhoneScreen(route: route))

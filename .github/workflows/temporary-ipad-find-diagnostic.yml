@@ -1,0 +1,39 @@
+name: Temporary iPad Find diagnostic
+on:
+  push:
+    branches: [codex/temporary-ipad-find-diagnostic]
+permissions:
+  contents: read
+jobs:
+  diagnostic:
+    runs-on: xcode-27
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90
+        with:
+          xcode-version: latest
+      - name: Run focused test and collect trace
+        run: |
+          set -euo pipefail
+          UDID=$(xcrun simctl create 'Openlist iPad Find diagnostic' com.apple.CoreSimulator.SimDeviceType.iPad-Pro-11-inch-M5-12GB com.apple.CoreSimulator.SimRuntime.iOS-27-0)
+          trap 'xcrun simctl shutdown "$UDID" >/dev/null 2>&1 || true; xcrun simctl delete "$UDID" >/dev/null 2>&1 || true' EXIT
+          xcodebuild -project openlist.xcodeproj -scheme OpenlistiOS -configuration Debug -destination "id=$UDID" -derivedDataPath build/diagnostic CODE_SIGNING_ALLOWED=NO ICLOUD_CONTAINER_ENVIRONMENT= build-for-testing > diagnostic-build.log 2>&1 || { tail -120 diagnostic-build.log; exit 1; }
+          xcrun simctl bootstatus "$UDID" -b
+          XCTESTRUN=$(ls -t build/diagnostic/Build/Products/*.xctestrun | head -1)
+          set +e
+          xcodebuild -xctestrun "$XCTESTRUN" -destination "id=$UDID" -parallel-testing-enabled NO -collect-test-diagnostics never -only-testing:OpenlistiOSUITests/IPadShellUITests/testSidebarAndDetailAreBothUsableInLandscape -resultBundlePath build/FindDiagnostic.xcresult test-without-building > diagnostic-test.log 2>&1
+          TEST_STATUS=$?
+          xcrun simctl spawn "$UDID" log show --last 20m --style compact --predicate 'eventMessage CONTAINS "IPAD_FIND_TRACE"' > diagnostic-trace.log 2>&1
+          cat diagnostic-trace.log
+          tail -120 diagnostic-test.log
+          exit "$TEST_STATUS"
+      - name: Upload diagnostic logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: ipad-find-diagnostic
+          path: |
+            diagnostic-build.log
+            diagnostic-test.log
+            diagnostic-trace.log
