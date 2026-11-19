@@ -95,12 +95,13 @@ private struct PhoneShell: View {
     }
 
     private var dockWorkspace: some View {
-        @Bindable var navigator = env.navigator
+        let environment = env
+        @Bindable var navigator = environment.navigator
         let showsDock = navigator.showsDock && !isKeyboardUp
         return TabView(selection: $navigator.tab) {
             ForEach(PhoneTab.allCases) { tab in
                 Tab(tab.title, systemImage: tab.symbol, value: tab) {
-                    PhoneTabStack(tab: tab, env: env)
+                    PhoneTabStack(tab: tab, env: environment)
                         .toolbarVisibility(.hidden, for: .tabBar)
                         // The inset below doesn't pass through to the tab's scroll view.
                         .environment(\.olDockRoom, showsDock ? OLMetrics.dockHeight - dockDrop : 0)

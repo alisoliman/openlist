@@ -8,13 +8,14 @@ struct PadWorkspace: View {
     @Environment(PhoneEnvironment.self) private var env
 
     var body: some View {
-        let navigator = env.navigator
+        let environment = env
+        let navigator = environment.navigator
         let tab = navigator.tab
         NavigationSplitView(columnVisibility: $sidebarVisibility) {
             PadSidebar()
                 .navigationSplitViewColumnWidth(min: 220, ideal: 258, max: 320)
         } detail: {
-            PhoneTabStack(tab: tab, env: env)
+            PhoneTabStack(tab: tab, env: environment)
                 .id(tab)
                 .environment(\.showsWorkspaceToolbar, true)
                 .environment(\.olScrollToTop, navigator.scrollToTopRequests(for: tab))
