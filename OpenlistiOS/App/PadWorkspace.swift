@@ -61,16 +61,19 @@ private struct PadSidebar: View {
     @Environment(\.phoneLibrary) private var library
 
     var body: some View {
-        List(selection: Binding(get: { selection }, set: { if let route = $0 { env.navigator.show(route) } })) {
+        let navigator = env.navigator
+        return List(selection: Binding(get: { selection }, set: { if let route = $0 { navigator.show(route) } })) {
             Section {
                 ForEach(PhoneTab.allCases) { tab in
                     Label(tab.title, systemImage: tab.symbol)
                         .tag(root(for: tab))
                         .accessibilityIdentifier("sidebar.\(tab.rawValue)")
                 }
-                Label("Find", systemImage: "magnifyingglass")
-                    .tag(PhoneRoute.find(""))
-                    .accessibilityIdentifier("sidebar.find")
+                Button { navigator.show(.find("")) } label: {
+                    Label("Find", systemImage: "magnifyingglass")
+                }
+                .tag(PhoneRoute.find(""))
+                .accessibilityIdentifier("sidebar.find")
                 Button {
                     env.navigator.open(.settings)
                 } label: {
