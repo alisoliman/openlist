@@ -12,6 +12,24 @@ final class IPadShellUITests: XCTestCase {
         continueAfterFailure = false
     }
 
+    func testSidebarFindFromTodayAndInbox() throws {
+        try requireIPad()
+        XCUIDevice.shared.orientation = .landscapeLeft
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let app = XCUIApplication.reviewSession()
+        app.launch()
+        app.waitForScreen("screen.today", timeout: 20)
+        let find = sidebar("find", in: app)
+        find.tap()
+        app.waitForScreen("screen.find")
+        XCTAssertTrue(find.isSelected)
+        sidebar("inbox", in: app).tap()
+        app.waitForScreen("screen.inbox")
+        find.tap()
+        app.waitForScreen("screen.find")
+        XCTAssertTrue(find.isSelected)
+    }
+
     func testSidebarAndDetailAreBothUsableInLandscape() throws {
         try requireIPad()
         XCUIDevice.shared.orientation = .landscapeLeft

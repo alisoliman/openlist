@@ -62,6 +62,7 @@ private struct PadSidebar: View {
 
     var body: some View {
         let navigator = env.navigator
+        let findSelected = selection == .find("")
         return List(selection: Binding(get: { selection }, set: { if let route = $0 { navigator.show(route) } })) {
             Section {
                 ForEach(PhoneTab.allCases) { tab in
@@ -72,7 +73,12 @@ private struct PadSidebar: View {
                 Button { navigator.show(.find("")) } label: {
                     Label("Find", systemImage: "magnifyingglass")
                 }
-                .tag(PhoneRoute.find(""))
+                .buttonStyle(.plain)
+                .listRowBackground(RoundedRectangle(cornerRadius: 12)
+                    .fill(findSelected ? OL.accentSoft : .clear)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3))
+                .accessibilityAddTraits(findSelected ? .isSelected : [])
                 .accessibilityIdentifier("sidebar.find")
                 Button {
                     env.navigator.open(.settings)
