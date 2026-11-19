@@ -151,8 +151,14 @@ struct PhoneTabStack: View {
     @Environment(\.showsWorkspaceToolbar) private var showsWorkspaceToolbar
 
     var body: some View {
-        let navigator = env.navigator
-        NavigationStack(path: Binding(get: { navigator.path(for: tab) }, set: { navigator.setPath($0, for: tab) })) {
+        @Bindable var navigator = env.navigator
+        let path: Binding<[PhoneRoute]> = switch tab {
+        case .today: $navigator.todayPath
+        case .inbox: $navigator.inboxPath
+        case .lists: $navigator.listsPath
+        case .work: $navigator.workPath
+        }
+        NavigationStack(path: path) {
             page(root)
                 .navigationDestination(for: PhoneRoute.self) { route in
                     page(PhoneScreen(route: route))

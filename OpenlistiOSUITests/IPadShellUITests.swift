@@ -30,6 +30,67 @@ final class IPadShellUITests: XCTestCase {
         XCTAssertTrue(find.isSelected)
     }
 
+    func testFindFromListsCanBeRepeatedAndBackedOutOf() throws {
+        try requireIPad()
+        XCUIDevice.shared.orientation = .landscapeLeft
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let app = XCUIApplication.reviewSession()
+        app.launch()
+        app.waitForScreen("screen.today", timeout: 20)
+        sidebar("lists", in: app).tap()
+        app.waitForScreen("screen.lists")
+        let find = sidebar("find", in: app)
+        find.tap()
+        app.waitForScreen("screen.find")
+        XCTAssertTrue(find.isSelected)
+        find.tap()
+        app.waitForScreen("screen.find")
+        app.buttons["Back to Lists"].tap()
+        app.waitForScreen("screen.lists")
+        let list = listShortcut("Weekend in Kyoto", in: app)
+        list.tap()
+        app.waitForScreen("screen.list")
+        find.tap()
+        app.waitForScreen("screen.find")
+        app.buttons["Back to Lists"].tap()
+        app.waitForScreen("screen.lists")
+        sidebar("today", in: app).tap()
+        app.waitForScreen("screen.today")
+        sidebar("inbox", in: app).tap()
+        app.waitForScreen("screen.inbox")
+        find.tap()
+        app.waitForScreen("screen.find")
+        app.buttons["Back to Lists"].tap()
+        app.waitForScreen("screen.lists")
+    }
+
+    func testFindKeepsListFilterAfterInteractiveBack() throws {
+        try requireIPad()
+        XCUIDevice.shared.orientation = .landscapeLeft
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let app = XCUIApplication.reviewSession()
+        app.launch()
+        app.waitForScreen("screen.today", timeout: 20)
+        sidebar("lists", in: app).tap()
+        app.waitForScreen("screen.lists")
+        app.buttons["lists.view.tasks"].tap()
+        let filter = app.buttons["lists.filter"]
+        for _ in 0..<5 where !filter.isHittable { app.swipeUp() }
+        filter.tap()
+        let reading = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'lists.filter.' AND label == %@", "Reading")).firstMatch
+        XCTAssertTrue(reading.waitForExistence(timeout: 5))
+        reading.tap()
+        XCTAssertEqual(filter.value as? String, "Reading")
+        sidebar("find", in: app).tap()
+        let find = app.waitForScreen("screen.find")
+        // The iPad edge is the detail column's edge, not the sidebar's.
+        let edge = find.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0.5)).withOffset(CGVector(dx: 2, dy: 0))
+        edge.press(forDuration: 0.1, thenDragTo: edge.withOffset(CGVector(dx: 500, dy: 0)),
+                   withVelocity: XCUIGestureVelocity(rawValue: 1200), thenHoldForDuration: 0)
+        app.waitForScreen("screen.lists")
+        XCTAssertEqual(filter.value as? String, "Reading", "Back should preserve the selected list filter")
+    }
+
     func testSidebarAndDetailAreBothUsableInLandscape() throws {
         try requireIPad()
         XCUIDevice.shared.orientation = .landscapeLeft
