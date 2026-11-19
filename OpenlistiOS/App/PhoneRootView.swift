@@ -147,15 +147,20 @@ private struct PhoneShell: View {
 struct PhoneTabStack: View {
     let tab: PhoneTab
     let env: PhoneEnvironment
+    var acceptsPathChange: ([PhoneRoute]) -> Bool = { _ in true }
+    var destinationAppeared: (PhoneRoute) -> Void = { _ in }
     @Environment(\.olStyle) private var style
     @Environment(\.showsWorkspaceToolbar) private var showsWorkspaceToolbar
 
     var body: some View {
         let navigator = env.navigator
-        NavigationStack(path: Binding(get: { navigator.path(for: tab) }, set: { navigator.setPath($0, for: tab) })) {
+        NavigationStack(path: Binding(get: { navigator.path(for: tab) }, set: { path in
+            if acceptsPathChange(path) { navigator.setPath(path, for: tab) }
+        })) {
             page(root)
                 .navigationDestination(for: PhoneRoute.self) { route in
                     page(PhoneScreen(route: route))
+                        .onAppear { destinationAppeared(route) }
                 }
         }
     }

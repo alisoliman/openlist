@@ -6,16 +6,29 @@ struct PadWorkspace: View {
     @Binding var sidebarVisibility: NavigationSplitViewVisibility
     let trayBottom: CGFloat
     @Environment(PhoneEnvironment.self) private var env
+    /// An explicit same-tab Find request, until its destination is visible.
+    /// SwiftUI can briefly write the old empty path while installing it.
+    @State private var pendingFind = false
 
     var body: some View {
         let environment = env
         let navigator = environment.navigator
         let tab = navigator.tab
+        let pending = $pendingFind
         NavigationSplitView(columnVisibility: $sidebarVisibility) {
-            PadSidebar()
+            PadSidebar(openFind: {
+                if navigator.tab == .lists && navigator.path(for: .lists) == [.find("")] { return }
+                pending.wrappedValue = navigator.tab == .lists
+                navigator.show(.find(""))
+            })
                 .navigationSplitViewColumnWidth(min: 220, ideal: 258, max: 320)
         } detail: {
-            PhoneTabStack(tab: tab, env: environment)
+            PhoneTabStack(tab: tab, env: environment, acceptsPathChange: { path in
+                !(pending.wrappedValue && navigator.tab == .lists
+                  && navigator.path(for: .lists) == [.find("")] && path.isEmpty)
+            }, destinationAppeared: { route in
+                if route == .find("") { pending.wrappedValue = false }
+            })
                 .id(tab)
                 .environment(\.showsWorkspaceToolbar, true)
                 .environment(\.olScrollToTop, navigator.scrollToTopRequests(for: tab))
@@ -26,6 +39,10 @@ struct PadWorkspace: View {
                 }
         }
         .navigationSplitViewStyle(.balanced)
+        .onChange(of: tab) { pendingFind = false }
+        .onChange(of: navigator.path(for: .lists)) { _, path in
+            if path != [.find("")] { pendingFind = false }
+        }
     }
 }
 
@@ -57,6 +74,7 @@ struct PadWorkspaceToolbar: ToolbarContent {
 }
 
 private struct PadSidebar: View {
+    let openFind: () -> Void
     @Environment(PhoneEnvironment.self) private var env
     @Environment(\.phoneLibrary) private var library
 
@@ -70,7 +88,7 @@ private struct PadSidebar: View {
                         .tag(root(for: tab))
                         .accessibilityIdentifier("sidebar.\(tab.rawValue)")
                 }
-                Button { navigator.show(.find("")) } label: {
+                Button(action: openFind) {
                     Label("Find", systemImage: "magnifyingglass")
                 }
                 .buttonStyle(.plain)
