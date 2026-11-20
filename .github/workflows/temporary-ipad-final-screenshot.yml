@@ -1,0 +1,40 @@
+name: Temporary final iPad screenshot
+on:
+  push:
+    branches: [codex/temporary-ipad-final-screenshot]
+permissions:
+  contents: read
+jobs:
+  screenshot:
+    runs-on: xcode-27
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90
+        with:
+          xcode-version: latest
+      - name: Build and capture
+        run: |
+          set -euo pipefail
+          TYPE=$(xcrun simctl list devicetypes | sed -n 's/^iPad Pro 13-inch (M5) (\(com.apple.CoreSimulator.SimDeviceType.iPad-Pro-13-inch-M5-[^)]*\)).*/\1/p' | head -1)
+          test -n "$TYPE"
+          UDID=$(xcrun simctl create 'Openlist App Store iPad 13' "$TYPE" com.apple.CoreSimulator.SimRuntime.iOS-27-0)
+          trap 'xcrun simctl shutdown "$UDID" >/dev/null 2>&1 || true; xcrun simctl delete "$UDID" >/dev/null 2>&1 || true' EXIT
+          xcodebuild -project openlist.xcodeproj -scheme OpenlistiOS -configuration Debug -destination "id=$UDID" -derivedDataPath build/screenshot CODE_SIGNING_ALLOWED=NO ICLOUD_CONTAINER_ENVIRONMENT= build-for-testing > build-screenshot.log 2>&1 || { tail -120 build-screenshot.log; exit 1; }
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl status_bar "$UDID" override --time '9:41' --dataNetwork wifi --wifiMode active --wifiBars 3 --batteryState charged --batteryLevel 100
+          mkdir -p build/iPadScreenshotAttachments
+          xcrun simctl install "$UDID" build/screenshot/Build/Products/Debug-iphonesimulator/OpenlistiOS.app
+          SIMCTL_CHILD_OpenlistReviewSession=AppStoreIPadFinalNov20 SIMCTL_CHILD_OpenlistFixtureNow=2026-11-20T09:41:00 SIMCTL_CHILD_OpenlistOpenRoute=today xcrun simctl launch "$UDID" solimanali.openlist.ios
+          sleep 15
+          xcrun simctl io "$UDID" screenshot build/iPadScreenshotAttachments/today-15s.png
+          sleep 15
+          xcrun simctl io "$UDID" screenshot build/iPadScreenshotAttachments/today-30s.png
+      - name: Upload screenshot and logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: openlist-ipad-final-app-store-screenshot
+          path: |
+            build/iPadScreenshotAttachments/
+            build-screenshot.log
