@@ -61,16 +61,16 @@ private struct PadSidebar: View {
     @Environment(\.phoneLibrary) private var library
 
     var body: some View {
-        List(selection: Binding(get: { selection }, set: { if let route = $0 { env.navigator.show(route) } })) {
+        List {
             Section {
                 ForEach(PhoneTab.allCases) { tab in
-                    Label(tab.title, systemImage: tab.symbol)
-                        .tag(root(for: tab))
-                        .accessibilityIdentifier("sidebar.\(tab.rawValue)")
+                    sidebarRow(route: root(for: tab), identifier: "sidebar.\(tab.rawValue)") {
+                        Label(tab.title, systemImage: tab.symbol)
+                    }
                 }
-                Label("Find", systemImage: "magnifyingglass")
-                    .tag(PhoneRoute.find(""))
-                    .accessibilityIdentifier("sidebar.find")
+                sidebarRow(route: .find(""), identifier: "sidebar.find") {
+                    Label("Find", systemImage: "magnifyingglass")
+                }
                 Button {
                     env.navigator.open(.settings)
                 } label: {
@@ -118,17 +118,35 @@ private struct PadSidebar: View {
 
     private func listRows(_ lists: [TaskList]) -> some View {
         ForEach(library.outline(lists)) { row in
-            Label {
-                Text(row.list.displayTitle)
-                    .lineLimit(1)
-            } icon: {
-                OLListGlyph(icon: row.list.icon, accent: row.list.accent.color, size: 18)
-                    .accessibilityHidden(true)
+            sidebarRow(route: .list(row.id), identifier: "sidebar.list.\(row.id.uuidString)") {
+                Label {
+                    Text(row.list.displayTitle)
+                        .lineLimit(1)
+                } icon: {
+                    OLListGlyph(icon: row.list.icon, accent: row.list.accent.color, size: 18)
+                        .accessibilityHidden(true)
+                }
+                .padding(.leading, CGFloat(min(row.depth, 3)) * 12)
             }
-            .padding(.leading, CGFloat(min(row.depth, 3)) * 12)
-            .tag(PhoneRoute.list(row.id))
-            .accessibilityIdentifier("sidebar.list.\(row.id.uuidString)")
         }
+    }
+
+    private func sidebarRow<Content: View>(route: PhoneRoute, identifier: String,
+                                           @ViewBuilder content: () -> Content) -> some View {
+        let isSelected = selection == route
+        return Button { env.navigator.show(route) } label: {
+            content()
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
+                .foregroundStyle(isSelected ? OL.onAccent : OL.ink)
+        }
+        .buttonStyle(.plain)
+        .listRowBackground(Capsule()
+            .fill(isSelected ? OL.accent : .clear)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3))
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
+        .accessibilityIdentifier(identifier)
     }
 }
 
