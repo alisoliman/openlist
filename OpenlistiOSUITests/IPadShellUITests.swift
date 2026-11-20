@@ -30,6 +30,37 @@ final class IPadShellUITests: XCTestCase {
         XCTAssertTrue(find.isSelected)
     }
 
+    func testBaselineFindInteractiveBackDiagnostic() throws {
+        try requireIPad()
+        XCUIDevice.shared.orientation = .landscapeLeft
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let app = XCUIApplication.reviewSession()
+        app.launch()
+        app.waitForScreen("screen.today", timeout: 20)
+        sidebar("find", in: app).tap()
+        let find = app.waitForScreen("screen.find")
+        let sidebarFrame = app.descendants(matching: .any)["ipad.sidebar"].frame
+        print("SWIPE_GEOMETRY app=\(app.frame) sidebar=\(sidebarFrame) find=\(find.frame)")
+        let before = XCTAttachment(screenshot: app.screenshot())
+        before.name = "find-before-swipe"
+        before.lifetime = .keepAlways
+        add(before)
+        let edge = find.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0.5)).withOffset(CGVector(dx: 2, dy: 0))
+        edge.press(forDuration: 0.1, thenDragTo: edge.withOffset(CGVector(dx: 500, dy: 0)),
+                   withVelocity: XCUIGestureVelocity(rawValue: 1200), thenHoldForDuration: 0)
+        let swipedBack = app.screen("screen.lists").waitForExistence(timeout: 10)
+        print("SWIPE_RESULT back=\(swipedBack) hierarchy=\(app.debugDescription)")
+        let after = XCTAttachment(screenshot: app.screenshot())
+        after.name = "find-after-swipe"
+        after.lifetime = .keepAlways
+        add(after)
+        if !swipedBack {
+            app.buttons["Back to Lists"].tap()
+            app.waitForScreen("screen.lists")
+        }
+        XCTAssertTrue(swipedBack, "Interactive Back did not return to Lists")
+    }
+
     func testSidebarAndDetailAreBothUsableInLandscape() throws {
         try requireIPad()
         XCUIDevice.shared.orientation = .landscapeLeft

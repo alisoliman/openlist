@@ -1,0 +1,64 @@
+name: Temporary iPad baseline swipe diagnostic
+on:
+  push:
+    branches: [codex/temporary-ipad-swipe-baseline]
+permissions:
+  contents: read
+jobs:
+  ipad:
+    runs-on: xcode-27
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: maxim-lobanov/setup-xcode@ed7a3b1fda3918c0306d1b724322adc0b8cc0a90
+        with:
+          xcode-version: latest
+      - name: Create simulator
+        run: |
+          UDID=$(xcrun simctl create 'Openlist iPad sidebar experiment' com.apple.CoreSimulator.SimDeviceType.iPad-Pro-11-inch-M5-12GB com.apple.CoreSimulator.SimRuntime.iOS-27-0)
+          echo "UDID=$UDID" >> "$GITHUB_ENV"
+      - name: Build app and tests
+        run: |
+          xcodebuild -project openlist.xcodeproj -scheme OpenlistiOS -configuration Debug -destination "id=$UDID" -derivedDataPath build/sidebar-check CODE_SIGNING_ALLOWED=NO ICLOUD_CONTAINER_ENVIRONMENT= build-for-testing > sidebar-build.log 2>&1 || { tail -120 sidebar-build.log; exit 1; }
+      - name: Boot simulator
+        run: xcrun simctl bootstatus "$UDID" -b
+      - name: Run iPad shell tests
+        run: |
+          XCTESTRUN=$(ls -t build/sidebar-check/Build/Products/*.xctestrun | head -1)
+          set +e
+          xcodebuild -xctestrun "$XCTESTRUN" -destination "id=$UDID" -parallel-testing-enabled NO -collect-test-diagnostics never -only-testing:OpenlistiOSUITests/IPadShellUITests/testBaselineFindInteractiveBackDiagnostic -resultBundlePath build/SidebarCheck.xcresult test-without-building > sidebar-test.log 2>&1
+          STATUS=$?
+          tail -180 sidebar-test.log
+          exit "$STATUS"
+      - name: Export XCTest screenshots
+        if: always()
+        continue-on-error: true
+        run: xcrun xcresulttool export attachments --path build/SidebarCheck.xcresult --output-path swipe-attachments
+      - name: Capture selected row in light and dark mode
+        if: always() && env.UDID != ''
+        continue-on-error: true
+        run: |
+          xcrun simctl ui "$UDID" appearance light
+          xcrun simctl status_bar "$UDID" override --time '9:41' --batteryState charged --batteryLevel 100
+          SIMCTL_CHILD_OpenlistReviewSession=AppStoreIPadNov19 SIMCTL_CHILD_OpenlistFixtureNow=2026-11-19T09:41:00 SIMCTL_CHILD_OpenlistOpenRoute=today xcrun simctl launch --terminate-running-process "$UDID" solimanali.openlist.ios
+          sleep 12
+          xcrun simctl io "$UDID" screenshot sidebar-light.png
+          xcrun simctl ui "$UDID" appearance dark
+          sleep 5
+          xcrun simctl io "$UDID" screenshot sidebar-dark.png
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: ipad-baseline-swipe-logs
+          path: |
+            sidebar-build.log
+            sidebar-test.log
+            sidebar-light.png
+            sidebar-dark.png
+            swipe-attachments
+      - name: Delete simulator
+        if: always() && env.UDID != ''
+        run: |
+          xcrun simctl shutdown "$UDID" >/dev/null 2>&1 || true
+          xcrun simctl delete "$UDID" >/dev/null 2>&1 || true
