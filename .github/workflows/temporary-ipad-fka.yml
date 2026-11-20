@@ -23,6 +23,7 @@ jobs:
       - name: Boot simulator
         run: xcrun simctl bootstatus "$UDID" -b
       - name: Enable FKA in Settings and test keyboard
+        timeout-minutes: 12
         run: |
           XCTESTRUN=$(ls -t build/fka-check/Build/Products/*.xctestrun | head -1)
           set +e
