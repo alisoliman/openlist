@@ -40,6 +40,8 @@ final class IPadShellUITests: XCTestCase {
 
         let lists = sidebar("lists", in: app)
         let find = sidebar("find", in: app)
+        XCTAssertGreaterThanOrEqual(lists.frame.height, 44)
+        XCTAssertGreaterThanOrEqual(find.frame.height, 44)
         lists.tap()
         app.waitForScreen("screen.lists")
         XCTAssertTrue(lists.isSelected)
@@ -55,6 +57,7 @@ final class IPadShellUITests: XCTestCase {
         XCTAssertTrue(lists.isSelected)
 
         let list = listShortcut("Weekend in Kyoto", in: app)
+        XCTAssertGreaterThanOrEqual(list.frame.height, 44)
         list.tap()
         app.waitForScreen("screen.list")
         XCTAssertTrue(list.isSelected)
@@ -98,6 +101,33 @@ final class IPadShellUITests: XCTestCase {
                    withVelocity: XCUIGestureVelocity(rawValue: 1200), thenHoldForDuration: 0)
         app.waitForScreen("screen.lists")
         XCTAssertEqual(filter.value as? String, "Reading", "Back should preserve the selected list filter")
+    }
+
+    func testSidebarHardwareKeyboardFocusAndArrowNavigation() throws {
+        try requireIPad()
+        XCUIDevice.shared.orientation = .landscapeLeft
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let app = XCUIApplication.reviewSession()
+        app.launch()
+        app.waitForScreen("screen.today", timeout: 20)
+        let lists = sidebar("lists", in: app)
+        let work = sidebar("work", in: app)
+
+        // A focused element confirms keyboard focus is available. If focus
+        // exists but Lists cannot be reached, that is a failure, not a skip.
+        let focused = app.descendants(matching: .any).matching(NSPredicate(format: "hasFocus == true")).firstMatch
+        var sawFocus = false
+        for _ in 0..<40 where !lists.hasFocus {
+            app.typeKey(XCUIKeyboardKey.tab.rawValue, modifierFlags: [])
+            sawFocus = sawFocus || focused.exists
+        }
+        try XCTSkipUnless(sawFocus || lists.hasFocus, "No keyboard focus detected; enable Full Keyboard Access")
+        XCTAssertTrue(lists.hasFocus, "Keyboard focus works, but Tab could not reach Lists")
+        app.typeKey(XCUIKeyboardKey.downArrow.rawValue, modifierFlags: [])
+        XCTAssertTrue(work.hasFocus, "Down Arrow should move focus from Lists to Work")
+        app.typeKey(XCUIKeyboardKey.return.rawValue, modifierFlags: [])
+        app.waitForScreen("screen.work")
+        XCTAssertTrue(work.isSelected)
     }
 
     func testSidebarAndDetailAreBothUsableInLandscape() throws {

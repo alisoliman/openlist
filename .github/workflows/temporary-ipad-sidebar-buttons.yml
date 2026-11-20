@@ -30,6 +30,18 @@ jobs:
           STATUS=$?
           tail -180 sidebar-test.log
           exit "$STATUS"
+      - name: Capture selected row in light and dark mode
+        if: always() && env.UDID != ''
+        continue-on-error: true
+        run: |
+          xcrun simctl ui "$UDID" appearance light
+          xcrun simctl status_bar "$UDID" override --time '9:41' --batteryState charged --batteryLevel 100
+          SIMCTL_CHILD_OpenlistReviewSession=AppStoreIPadNov19 SIMCTL_CHILD_OpenlistFixtureNow=2026-11-19T09:41:00 SIMCTL_CHILD_OpenlistOpenRoute=today xcrun simctl launch --terminate-running-process "$UDID" solimanali.openlist.ios
+          sleep 12
+          xcrun simctl io "$UDID" screenshot sidebar-light.png
+          xcrun simctl ui "$UDID" appearance dark
+          sleep 5
+          xcrun simctl io "$UDID" screenshot sidebar-dark.png
       - name: Upload logs
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
@@ -38,6 +50,8 @@ jobs:
           path: |
             sidebar-build.log
             sidebar-test.log
+            sidebar-light.png
+            sidebar-dark.png
       - name: Delete simulator
         if: always() && env.UDID != ''
         run: |

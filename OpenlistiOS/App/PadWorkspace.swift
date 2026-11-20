@@ -136,12 +136,13 @@ private struct PadSidebar: View {
         let isSelected = selection == route
         return Button { env.navigator.show(route) } label: {
             content()
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                 .contentShape(Rectangle())
+                .foregroundStyle(isSelected ? OL.onAccent : OL.ink)
         }
         .buttonStyle(.plain)
-        .listRowBackground(RoundedRectangle(cornerRadius: 12)
-            .fill(isSelected ? OL.accentSoft : .clear)
+        .listRowBackground(Capsule()
+            .fill(isSelected ? OL.accent : .clear)
             .padding(.horizontal, 8)
             .padding(.vertical, 3))
         .accessibilityAddTraits(isSelected ? .isSelected : [])
