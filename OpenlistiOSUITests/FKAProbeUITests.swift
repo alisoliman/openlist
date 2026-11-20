@@ -16,21 +16,21 @@ final class FKAProbeUITests: XCTestCase {
 
         let settings = XCUIApplication(bundleIdentifier: "com.apple.Preferences")
         settings.launch()
-        let accessibility = settings.cells["Accessibility"].firstMatch
+        let accessibility = settings.buttons["com.apple.settings.accessibility"].firstMatch
         for _ in 0..<8 where !accessibility.isHittable { settings.swipeUp() }
         guard accessibility.waitForExistence(timeout: 10), accessibility.isHittable else {
             XCTFail("Settings Accessibility not found:\n\(settings.debugDescription)")
             return
         }
         accessibility.tap()
-        let keyboard = settings.cells["Keyboards & Typing"].firstMatch
+        let keyboard = settings.buttons["Keyboards & Typing"].firstMatch
         for _ in 0..<10 where !keyboard.isHittable { settings.swipeUp() }
         guard keyboard.waitForExistence(timeout: 10), keyboard.isHittable else {
             XCTFail("Keyboards & Typing not found:\n\(settings.debugDescription)")
             return
         }
         keyboard.tap()
-        let fkaRow = settings.cells["Full Keyboard Access"].firstMatch
+        let fkaRow = settings.buttons["Full Keyboard Access"].firstMatch
         guard fkaRow.waitForExistence(timeout: 10) else {
             XCTFail("Full Keyboard Access row not found:\n\(settings.debugDescription)")
             return
