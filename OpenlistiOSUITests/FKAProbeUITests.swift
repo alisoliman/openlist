@@ -30,13 +30,13 @@ final class FKAProbeUITests: XCTestCase {
             return
         }
         keyboard.tap()
-        let fkaRow = settings.buttons["Full Keyboard Access"].firstMatch
+        let fkaRow = settings.buttons["FULL_KEYBOARD_ACCESS"].firstMatch
         guard fkaRow.waitForExistence(timeout: 10) else {
             XCTFail("Full Keyboard Access row not found:\n\(settings.debugDescription)")
             return
         }
         fkaRow.tap()
-        let fka = settings.switches["Full Keyboard Access"].firstMatch
+        let fka = settings.switches.matching(NSPredicate(format: "identifier == %@ OR label == %@", "FULL_KEYBOARD_ACCESS", "Full Keyboard Access")).firstMatch
         guard fka.waitForExistence(timeout: 10) else {
             XCTFail("Full Keyboard Access switch not found:\n\(settings.debugDescription)")
             return
