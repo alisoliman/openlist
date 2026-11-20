@@ -95,8 +95,12 @@ final class IPadShellUITests: XCTestCase {
         XCTAssertEqual(filter.value as? String, "Reading")
 
         sidebar("find", in: app).tap()
-        let find = app.waitForScreen("screen.find")
-        let edge = find.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0.5)).withOffset(CGVector(dx: 2, dy: 0))
+        app.waitForScreen("screen.find")
+        // `screen.find` exposes an app-wide accessibility frame. Start at the
+        // actual detail edge, just to the right of the sidebar instead.
+        let sidebarFrame = app.descendants(matching: .any)["ipad.sidebar"].frame
+        let edge = app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0.5))
+            .withOffset(CGVector(dx: sidebarFrame.maxX - app.frame.minX + 2, dy: 0))
         edge.press(forDuration: 0.1, thenDragTo: edge.withOffset(CGVector(dx: 500, dy: 0)),
                    withVelocity: XCUIGestureVelocity(rawValue: 1200), thenHoldForDuration: 0)
         app.waitForScreen("screen.lists")
