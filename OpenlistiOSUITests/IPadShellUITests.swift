@@ -45,8 +45,10 @@ final class IPadShellUITests: XCTestCase {
         before.name = "find-before-swipe"
         before.lifetime = .keepAlways
         add(before)
+        app.buttons["Hide keyboard"].tap()
+        app.buttons["Hide Sidebar"].tap()
         let edge = app.coordinate(withNormalizedOffset: CGVector(dx: 0, dy: 0.5))
-            .withOffset(CGVector(dx: sidebarFrame.maxX - app.frame.minX + 2, dy: 0))
+            .withOffset(CGVector(dx: 2, dy: 0))
         edge.press(forDuration: 0.1, thenDragTo: edge.withOffset(CGVector(dx: 500, dy: 0)),
                    withVelocity: XCUIGestureVelocity(rawValue: 1200), thenHoldForDuration: 0)
         let swipedBack = app.screen("screen.lists").waitForExistence(timeout: 10)
